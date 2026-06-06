@@ -20,7 +20,10 @@ export class RockUserResolver {
   private static RSR_ROLE_NAME = 'RSR - Rock Administration';
   private cache = new Map<string, CacheEntry<any>>();
 
-  constructor(private rockClient: RockClient) {}
+  constructor(
+    private rockClient: RockClient,
+    private adminClient?: RockClient
+  ) {}
 
   private getCached<T>(key: string): T | null {
     const entry = this.cache.get(key);
@@ -111,6 +114,7 @@ export class RockUserResolver {
   }
 
   private async checkRsrAdmin(ctx: OAuthRockContext, personId: number): Promise<boolean> {
+    const lookupClient = this.adminClient ?? this.rockClient;
     const cacheKey = `rsr-membership:${personId}`;
     const cached = this.getCached<boolean>(cacheKey);
     if (cached !== null) return cached;
@@ -121,7 +125,7 @@ export class RockUserResolver {
 
       if (!groupId) {
         try {
-          const groups = await this.rockClient.post<any[]>(ctx, '/api/v2/models/groups/search', {
+          const groups = await lookupClient.post<any[]>(ctx, '/api/v2/models/groups/search', {
             Where: `Name == ${quoteLinqString(RockUserResolver.RSR_ROLE_NAME)}`,
           });
           if (groups && groups.length > 0) {
@@ -129,7 +133,7 @@ export class RockUserResolver {
           }
         } catch {
           try {
-            const groups = await this.rockClient.get<any[]>(ctx, `/api/Groups?$filter=Name eq ${quoteODataString(RockUserResolver.RSR_ROLE_NAME)}`);
+            const groups = await lookupClient.get<any[]>(ctx, `/api/Groups?$filter=Name eq ${quoteODataString(RockUserResolver.RSR_ROLE_NAME)}`);
             if (groups && groups.length > 0) {
               groupId = groups[0].Id;
             }
@@ -148,13 +152,13 @@ export class RockUserResolver {
 
       let isMember = false;
       try {
-        const members = await this.rockClient.post<any[]>(ctx, '/api/v2/models/groupmembers/search', {
+        const members = await lookupClient.post<any[]>(ctx, '/api/v2/models/groupmembers/search', {
           Where: `GroupId == ${groupId} && PersonId == ${personId} && GroupMemberStatus == 1`,
         });
         isMember = members && members.length > 0;
       } catch {
         try {
-          const members = await this.rockClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 'Active'`);
+          const members = await lookupClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 'Active'`);
           isMember = members && members.length > 0;
         } catch {
           // Ignore
