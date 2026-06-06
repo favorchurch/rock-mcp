@@ -6,6 +6,7 @@ import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { quoteLinqString, quoteODataString, assertValidGuid } from '../rock/query.js';
 import { AuditLogger } from '../auth/audit.js';
+import { authorizeWrite } from '../auth/authorization.js';
 
 const rockPeopleSchema = z.discriminatedUnion('action', [
   z.object({
@@ -272,6 +273,32 @@ export const rockPeopleTool: GatewayTool = {
         if (firstName !== undefined) data.FirstName = firstName;
         if (lastName !== undefined) data.LastName = lastName;
 
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_people',
+          action: parsed.action,
+          model: 'people',
+          operation: 'patch' as const,
+          fields: Object.keys(data),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_people',
+            action: parsed.action,
+            target: { model: 'people', id },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
+        }
+
         const shouldMutate = commit && !dryRun;
         if (!shouldMutate) {
           auditLogger.log(ctx, {
@@ -340,6 +367,31 @@ export const rockPeopleTool: GatewayTool = {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
             message: 'Person not found.',
+          });
+        }
+
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_people',
+          action: parsed.action,
+          model: 'people',
+          operation: 'patchAttributes' as const,
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_people',
+            action: parsed.action,
+            target: { model: 'people', id },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
           });
         }
 
@@ -430,6 +482,32 @@ export const rockPeopleTool: GatewayTool = {
           Text: text,
           IsAlert: false,
         };
+
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_people',
+          action: parsed.action,
+          model: 'notes',
+          operation: 'create' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_people',
+            action: parsed.action,
+            target: { model: 'notes' },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
+        }
 
         const shouldMutate = commit && !dryRun;
         if (!shouldMutate) {
@@ -525,6 +603,32 @@ export const rockPeopleTool: GatewayTool = {
         };
         if (assignedAliasId) {
           payload.AssignedPersonAliasId = assignedAliasId;
+        }
+
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_people',
+          action: parsed.action,
+          model: 'connectionrequests',
+          operation: 'create' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_people',
+            action: parsed.action,
+            target: { model: 'connectionrequests' },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
         }
 
         const shouldMutate = commit && !dryRun;

@@ -5,6 +5,7 @@ import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { AuditLogger } from '../auth/audit.js';
+import { authorizeWrite } from '../auth/authorization.js';
 
 const rockWorkflowSchema = z.discriminatedUnion('action', [
   z.object({
@@ -224,6 +225,32 @@ export const rockWorkflowTool: GatewayTool = {
           ActivatedDateTime: new Date().toISOString(),
         };
 
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_workflow',
+          action: parsed.action,
+          model: 'workflows',
+          operation: 'create' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_workflow',
+            action: parsed.action,
+            target: { model: 'workflows' },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
+        }
+
         const shouldMutate = commit && !dryRun;
         if (!shouldMutate) {
           auditLogger.log(ctx, {
@@ -291,6 +318,32 @@ export const rockWorkflowTool: GatewayTool = {
         if (status !== undefined) payload.Status = status;
         if (isCompleted !== undefined) {
           payload.CompletedDateTime = isCompleted ? new Date().toISOString() : null;
+        }
+
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_workflow',
+          action: parsed.action,
+          model: 'workflows',
+          operation: 'patch' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_workflow',
+            action: parsed.action,
+            target: { model: 'workflows', id: workflowId },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
         }
 
         const shouldMutate = commit && !dryRun;
@@ -361,6 +414,32 @@ export const rockWorkflowTool: GatewayTool = {
           CompletedDateTime: new Date().toISOString(),
         };
 
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_workflow',
+          action: parsed.action,
+          model: 'workflowactivities',
+          operation: 'patch' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_workflow',
+            action: parsed.action,
+            target: { model: 'workflowactivities', id: activityId },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
+        }
+
         const shouldMutate = commit && !dryRun;
         if (!shouldMutate) {
           auditLogger.log(ctx, {
@@ -429,6 +508,32 @@ export const rockWorkflowTool: GatewayTool = {
         if (statusId !== undefined) payload.ConnectionStatusId = statusId;
         if (assignedPersonAliasId !== undefined) payload.AssignedPersonAliasId = assignedPersonAliasId;
         if (comments !== undefined) payload.Comments = comments;
+
+        // Perform authorization check BEFORE mutation, even for dry-runs
+        const descriptor = {
+          tool: 'rock_workflow',
+          action: parsed.action,
+          model: 'connectionrequests',
+          operation: 'patch' as const,
+          fields: Object.keys(payload),
+        };
+        const authz = authorizeWrite(ctx, descriptor);
+        if (!authz.allowed) {
+          auditLogger.log(ctx, {
+            tool: 'rock_workflow',
+            action: parsed.action,
+            target: { model: 'connectionrequests', id: connectionRequestId },
+            dryRun,
+            commit,
+            reason,
+            outcome: 'denied',
+            errorCode: authz.code,
+          });
+          return formatResponse(parsed.action, ctx, null, {
+            code: authz.code || 'AUTHORIZATION_DENIED',
+            message: authz.reason || 'Authorization denied.',
+          });
+        }
 
         const shouldMutate = commit && !dryRun;
         if (!shouldMutate) {

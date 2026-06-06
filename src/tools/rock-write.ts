@@ -5,6 +5,7 @@ import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { AuditLogger } from '../auth/audit.js';
+import { authorizeWrite } from '../auth/authorization.js';
 
 const rockWriteSchema = z.discriminatedUnion('action', [
   z.object({
@@ -79,6 +80,32 @@ export const rockWriteTool: GatewayTool = {
     }
 
     const shouldMutate = commit && !dryRun;
+
+    // Perform authorization check BEFORE mutation, even for dry-runs
+    const descriptor = {
+      tool: 'rock_write',
+      action,
+      model,
+      operation: action as 'patch' | 'delete',
+      fields: action === 'patch' ? Object.keys((parsed as any).data || {}) : undefined,
+    };
+    const authz = authorizeWrite(ctx, descriptor);
+    if (!authz.allowed) {
+      auditLogger.log(ctx, {
+        tool: 'rock_write',
+        action,
+        target: { model, id },
+        dryRun,
+        commit,
+        reason,
+        outcome: 'denied',
+        errorCode: authz.code,
+      });
+      return formatResponse(action, ctx, null, {
+        code: authz.code || 'AUTHORIZATION_DENIED',
+        message: authz.reason || 'Authorization denied.',
+      });
+    }
 
     if (!shouldMutate) {
       // Log audit dry-run
