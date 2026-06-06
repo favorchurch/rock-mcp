@@ -228,6 +228,18 @@ describe('Auth0OAuthTokenVerifier', () => {
     });
   });
 
+  it('rejects non-HTTPS JWKS dependency URLs', () => {
+    const config = loadAuth0Config({
+      AUTH0_ISSUER: 'https://favor.us.auth0.com/',
+      AUTH0_AUDIENCE: 'https://rock.example.com/api',
+      MCP_PUBLIC_URL: 'https://mcp.example.com/mcp',
+    });
+
+    expect(() => new Auth0OAuthTokenVerifier(config, {
+      jwksUri: 'http://favor.us.auth0.com/.well-known/jwks.json',
+    })).toThrow(/jwks_uri.*https/i);
+  });
+
   it('rejects JWT payloads that do not include sub', async () => {
     const config = loadAuth0Config({
       AUTH0_ISSUER: 'https://favor.us.auth0.com/',
@@ -461,6 +473,31 @@ describe('OAuth Middleware', () => {
     expect(req.oauthContext.oauth.subject).toBe('user123');
     expect(req.oauthContext.scopes).toContain('read');
     expect(req.oauthContext.scopes).toContain('write');
+  });
+
+  it('should trim valid token subjects before attaching oauthContext', async () => {
+    const middleware = createAuthMiddleware({
+      verifyToken: async () => ({
+        isValid: true,
+        payload: { sub: '  user123  ', scope: 'read', email: 'test@example.com' }
+      }),
+    });
+
+    const req = {
+      headers: { authorization: 'Bearer token' },
+      ip: '127.0.0.1',
+    } as unknown as Request & { oauthContext?: any };
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect(req.oauthContext.oauth.subject).toBe('user123');
   });
 
   it('should return 401 when token has read scope but no subject', async () => {

@@ -168,7 +168,9 @@ export class Auth0OAuthTokenVerifier implements OAuthTokenVerifier {
     private config: Auth0OAuthConfig,
     deps: Auth0OAuthTokenVerifierDeps = {}
   ) {
-    const jwksUri = deps.jwksUri ? new URL(deps.jwksUri) : new URL('.well-known/jwks.json', config.issuer);
+    const jwksUri = deps.jwksUri
+      ? parseUrl(deps.jwksUri.toString(), 'jwks_uri', { requireHttps: true })
+      : new URL('.well-known/jwks.json', config.issuer);
     const createRemoteJWKSet = deps.createRemoteJWKSet || ((url: URL) => jose.createRemoteJWKSet(url));
     this.jwks = createRemoteJWKSet(jwksUri);
     this.jwtVerify = deps.jwtVerify || (async (token, jwks, options) => {
@@ -290,7 +292,7 @@ export function createAuthMiddleware(options: VerifyTokenOptions = {}) {
       if (scopes.has('write')) mcpScopes.add('write');
 
       const subject = typeof payload.sub === 'string' && payload.sub.trim().length > 0
-        ? payload.sub
+        ? payload.sub.trim()
         : undefined;
       if (!subject) {
         res.status(401).json({ error: 'Invalid token subject' });
