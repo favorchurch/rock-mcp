@@ -6,6 +6,7 @@ import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { StoredDataset } from './dataset-store.js';
+import { REPORT_VIEWER_URI } from '../mcp/apps.js';
 
 const rockReportSchema = z.discriminatedUnion('action', [
   z.object({
@@ -37,6 +38,7 @@ const rockReportSchema = z.discriminatedUnion('action', [
 export const rockReportTool: GatewayTool = {
   name: 'rock_report',
   title: 'Rock Report & Analytics Viewer',
+  appResourceUri: REPORT_VIEWER_URI,
   schemaForMode(_mode: McpMode, _scopes: Set<McpScope>): z.ZodTypeAny | null {
     return rockReportSchema;
   },
@@ -133,7 +135,7 @@ export const rockReportTool: GatewayTool = {
           previewRows: rows.slice(0, 10), // Return only first 10 preview rows to save tokens
           datasetId,
           app: {
-            resourceUri: `ui://rock/report-viewer.html?datasetId=${datasetId}`,
+            resourceUri: REPORT_VIEWER_URI,
           },
         };
 
@@ -224,7 +226,8 @@ export const rockReportTool: GatewayTool = {
     if (parsed.action === 'app') {
       const { datasetId } = parsed;
       return formatResponse(parsed.action, ctx, {
-        appUri: `ui://rock/report-viewer.html?datasetId=${datasetId}`,
+        appUri: REPORT_VIEWER_URI,
+        datasetId,
       });
     }
 

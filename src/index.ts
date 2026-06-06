@@ -67,14 +67,28 @@ if (isStdio) {
   for (const tool of allTools) {
     const schema = tool.schemaForMode('readwrite', devCtx.scopes);
     if (schema) {
+      // Per MCP Apps spec (ext-apps v0.3.0), tools that open an MCP App
+      // must advertise the app resource URI via _meta.ui.resourceUri.
+      const baseConfig = {
+        title: tool.title,
+        description: tool.descriptionForMode('readwrite'),
+        inputSchema: schema,
+      };
+      const config = tool.appResourceUri
+        ? {
+            ...baseConfig,
+            _meta: {
+              ui: {
+                resourceUri: tool.appResourceUri,
+              },
+            },
+          }
+        : baseConfig;
+
       server.registerTool(
         tool.name,
-        {
-          title: tool.title,
-          description: tool.descriptionForMode('readwrite'),
-          inputSchema: schema,
-        },
-        async (args, extra) => {
+        config,
+        async (args: any, extra: any) => {
           return await tool.handle(args, extra, devCtx) as any;
         }
       );

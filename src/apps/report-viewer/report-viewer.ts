@@ -18,11 +18,24 @@ if (datasetId) {
   loadDataset(datasetId);
 }
 
-// Handler for tool execution events if pushed from host
+// Handler for tool execution events if pushed from host.
+// Per MCP Apps spec (ext-apps v0.3.0), ontoolresult receives a CallToolResult
+// which has content: ContentBlock[]. We extract the JSON envelope from content[0].text
+// and parse the datasetId from the result.
 app.ontoolresult = (result: any) => {
-  if (result && result.datasetId) {
-    datasetId = result.datasetId;
-    loadDataset(datasetId!);
+  try {
+    if (result && result.content && Array.isArray(result.content) && result.content.length > 0) {
+      const textContent = result.content[0];
+      if (textContent && typeof textContent.text === 'string') {
+        const envelope = JSON.parse(textContent.text);
+        if (envelope && envelope.result && envelope.result.datasetId) {
+          datasetId = envelope.result.datasetId;
+          loadDataset(datasetId!);
+        }
+      }
+    }
+  } catch (_err) {
+    // If parsing fails, datasetId from URL will be used
   }
 };
 
