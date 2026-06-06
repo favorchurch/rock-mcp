@@ -838,7 +838,7 @@ export const rockPeopleTool: GatewayTool = {
           auditLogger.log(ctx, {
             tool: 'rock_people',
             action: parsed.action,
-            target: { model: 'people' },
+            target: { model: 'people', id },
             dryRun: false,
             commit: true,
             reason,
