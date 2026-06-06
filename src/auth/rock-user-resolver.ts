@@ -1,5 +1,6 @@
 import { RockClient } from '../rock/client.js';
 import { OAuthRockContext } from '../http/oauth.js';
+import { quoteLinqString, quoteODataString, assertValidGuid } from '../rock/query.js';
 
 export interface ResolvedRockUser {
   personId?: number;
@@ -51,15 +52,17 @@ export class RockUserResolver {
     // 1. Resolve by explicit Guid claim if present
     if (oauth.rockPersonGuid) {
       try {
+        const validGuid = assertValidGuid(oauth.rockPersonGuid);
         const results = await this.rockClient.post<any[]>(ctx, '/api/v2/models/people/search', {
-          Where: `Guid == "${oauth.rockPersonGuid}"`,
+          Where: `Guid == ${quoteLinqString(validGuid)}`,
         });
         if (results && results.length > 0) {
           person = results[0];
         }
       } catch {
         try {
-          const results = await this.rockClient.get<any[]>(ctx, `/api/People?$filter=Guid eq guid'${oauth.rockPersonGuid}'`);
+          const validGuid = assertValidGuid(oauth.rockPersonGuid);
+          const results = await this.rockClient.get<any[]>(ctx, `/api/People?$filter=Guid eq guid${quoteODataString(validGuid)}`);
           if (results && results.length > 0) {
             person = results[0];
           }
@@ -73,14 +76,14 @@ export class RockUserResolver {
     if (!person && oauth.email) {
       try {
         const results = await this.rockClient.post<any[]>(ctx, '/api/v2/models/people/search', {
-          Where: `Email == "${oauth.email}"`,
+          Where: `Email == ${quoteLinqString(oauth.email)}`,
         });
         if (results && results.length > 0) {
           person = results[0];
         }
       } catch {
         try {
-          const results = await this.rockClient.get<any[]>(ctx, `/api/People?$filter=Email eq '${oauth.email}'`);
+          const results = await this.rockClient.get<any[]>(ctx, `/api/People?$filter=Email eq ${quoteODataString(oauth.email)}`);
           if (results && results.length > 0) {
             person = results[0];
           }
@@ -120,14 +123,14 @@ export class RockUserResolver {
       if (!groupId) {
         try {
           const groups = await this.rockClient.post<any[]>(ctx, '/api/v2/models/groups/search', {
-            Where: `Name == "${RockUserResolver.RSR_ROLE_NAME}"`,
+            Where: `Name == ${quoteLinqString(RockUserResolver.RSR_ROLE_NAME)}`,
           });
           if (groups && groups.length > 0) {
             groupId = groups[0].Id;
           }
         } catch {
           try {
-            const groups = await this.rockClient.get<any[]>(ctx, `/api/Groups?$filter=Name eq '${RockUserResolver.RSR_ROLE_NAME}'`);
+            const groups = await this.rockClient.get<any[]>(ctx, `/api/Groups?$filter=Name eq ${quoteODataString(RockUserResolver.RSR_ROLE_NAME)}`);
             if (groups && groups.length > 0) {
               groupId = groups[0].Id;
             }

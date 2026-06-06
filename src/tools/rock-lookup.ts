@@ -3,6 +3,7 @@ import { GatewayTool, McpToolResult } from './types.js';
 import { McpMode, McpScope } from '../mcp/modes.js';
 import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
+import { quoteLinqString } from '../rock/query.js';
 
 const rockLookupSchema = z.discriminatedUnion('action', [
   z.object({
@@ -91,8 +92,9 @@ export const rockLookupTool: GatewayTool = {
         const kinds = parsed.kinds || ['person'];
 
         if (kinds.includes('person')) {
+          const quoted = quoteLinqString(parsed.query);
           const people = await rockClient.post(ctx, '/api/v2/models/people/search', {
-            Where: `NickName.Contains("${parsed.query}") || LastName.Contains("${parsed.query}")`,
+            Where: `NickName.Contains(${quoted}) || LastName.Contains(${quoted})`,
           });
           results.push(...(people || []).map((p: any) => ({
             kind: 'person',

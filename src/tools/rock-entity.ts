@@ -4,6 +4,7 @@ import { McpMode, McpScope } from '../mcp/modes.js';
 import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
+import { escapeODataString } from '../rock/query.js';
 
 const rockEntitySchema = z.discriminatedUnion('action', [
   z.object({
@@ -61,7 +62,8 @@ function linqToOData(where?: string): string {
   let odata = where;
   odata = odata.replace(/\s*==\s*/g, ' eq ');
   odata = odata.replace(/\s*!=\s*/g, ' ne ');
-  odata = odata.replace(/"([^"]*)"/g, "'$1'");
+  // Convert double-quoted strings to OData single-quoted strings with escaped quotes
+  odata = odata.replace(/"([^"]*)"/g, (_match, content) => `'${escapeODataString(content)}'`);
   odata = odata.replace(/\s*&&\s*/g, ' and ');
   odata = odata.replace(/\s*\|\|\s*/g, ' or ');
   return odata;

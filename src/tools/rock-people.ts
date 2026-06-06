@@ -4,6 +4,7 @@ import { McpMode, McpScope } from '../mcp/modes.js';
 import { OAuthRockContext } from '../http/oauth.js';
 import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
+import { quoteLinqString, quoteODataString, assertValidGuid } from '../rock/query.js';
 import { AuditLogger } from '../auth/audit.js';
 
 const rockPeopleSchema = z.discriminatedUnion('action', [
@@ -73,18 +74,21 @@ async function resolvePersonId(client: RockClient, ctx: OAuthRockContext, person
   if (person.guid) {
     let results: any[] = [];
     try {
-      results = await client.post(ctx, '/api/v2/models/people/search', { Where: `Guid == "${person.guid}"` });
+      const validGuid = assertValidGuid(person.guid);
+      results = await client.post(ctx, '/api/v2/models/people/search', { Where: `Guid == ${quoteLinqString(validGuid)}` });
     } catch {
-      results = await client.get(ctx, `/api/People?$filter=Guid eq guid'${person.guid}'`);
+      const validGuid = assertValidGuid(person.guid);
+      results = await client.get(ctx, `/api/People?$filter=Guid eq guid${quoteODataString(validGuid)}`);
     }
     if (results && results.length > 0) return results[0].Id;
   }
   if (person.search) {
     let results: any[] = [];
     try {
-      results = await client.post(ctx, '/api/v2/models/people/search', { Where: `NickName == "${person.search}" || LastName == "${person.search}" || (NickName + " " + LastName) == "${person.search}"` });
+      const quoted = quoteLinqString(person.search);
+      results = await client.post(ctx, '/api/v2/models/people/search', { Where: `NickName == ${quoted} || LastName == ${quoted} || (NickName + " " + LastName) == ${quoted}` });
     } catch {
-      const odataFilter = `(NickName eq '${person.search}') or (LastName eq '${person.search}')`;
+      const odataFilter = `(NickName eq ${quoteODataString(person.search)}) or (LastName eq ${quoteODataString(person.search)})`;
       results = await client.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}`);
     }
     if (results && results.length > 0) return results[0].Id;
@@ -147,13 +151,14 @@ export const rockPeopleTool: GatewayTool = {
       try {
         let results: any[] = [];
         try {
+          const quoted = quoteLinqString(query);
           results = await rockClient.post(ctx, '/api/v2/models/people/search', {
-            Where: `NickName.Contains("${query}") || LastName.Contains("${query}")`,
+            Where: `NickName.Contains(${quoted}) || LastName.Contains(${quoted})`,
             Limit: limit,
           });
         } catch (_err) {
           // Fall back to REST v1
-          const odataFilter = `(substringof('${query}', NickName) eq true) or (substringof('${query}', LastName) eq true)`;
+          const odataFilter = `(substringof(${quoteODataString(query)}, NickName) eq true) or (substringof(${quoteODataString(query)}, LastName) eq true)`;
           results = await rockClient.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}&$top=${limit}`);
         }
 
@@ -186,11 +191,13 @@ export const rockPeopleTool: GatewayTool = {
         } else if (person.guid) {
           let results: any[] = [];
           try {
+            const validGuid = assertValidGuid(person.guid);
             results = await rockClient.post(ctx, '/api/v2/models/people/search', {
-              Where: `Guid == "${person.guid}"`,
+              Where: `Guid == ${quoteLinqString(validGuid)}`,
             });
           } catch (_err) {
-            results = await rockClient.get(ctx, `/api/People?$filter=Guid eq guid'${person.guid}'`);
+            const validGuid = assertValidGuid(person.guid);
+            results = await rockClient.get(ctx, `/api/People?$filter=Guid eq guid${quoteODataString(validGuid)}`);
           }
           if (results && results.length > 0) {
             match = results[0];
@@ -198,11 +205,12 @@ export const rockPeopleTool: GatewayTool = {
         } else if (person.search) {
           let results: any[] = [];
           try {
+            const quoted = quoteLinqString(person.search);
             results = await rockClient.post(ctx, '/api/v2/models/people/search', {
-              Where: `NickName == "${person.search}" || LastName == "${person.search}" || (NickName + " " + LastName) == "${person.search}"`,
+              Where: `NickName == ${quoted} || LastName == ${quoted} || (NickName + " " + LastName) == ${quoted}`,
             });
           } catch (_err) {
-            const odataFilter = `(NickName eq '${person.search}') or (LastName eq '${person.search}')`;
+            const odataFilter = `(NickName eq ${quoteODataString(person.search)}) or (LastName eq ${quoteODataString(person.search)})`;
             results = await rockClient.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}`);
           }
           if (results && results.length > 0) {
@@ -408,7 +416,7 @@ export const rockPeopleTool: GatewayTool = {
             noteTypeId = parseInt(noteType, 10);
           } else {
             try {
-              const types = await rockClient.get<any[]>(ctx, `/api/NoteTypes?$filter=EntityType/Name eq 'Rock.Model.Person' and substringof('${noteType}', Name) eq true`);
+              const types = await rockClient.get<any[]>(ctx, `/api/NoteTypes?$filter=EntityType/Name eq 'Rock.Model.Person' and substringof(${quoteODataString(noteType)}, Name) eq true`);
               if (types && types.length > 0) {
                 noteTypeId = types[0].Id;
               }
