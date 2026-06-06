@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // @ts-ignore
 import { RockClientImpl } from './client.js';
 // @ts-ignore
-import { RockCredentialStrategy } from './auth-strategy.js';
+import { RockCredentialStrategy, UserJwtStrategy } from './auth-strategy.js';
 // @ts-ignore
 import { OAuthRockContext } from '../http/oauth.js';
 
@@ -54,5 +54,43 @@ describe('RockCredentialStrategy', () => {
         }),
       })
     );
+  });
+});
+
+describe('UserJwtStrategy', () => {
+  it('sends the raw Rock user token as a Bearer token', async () => {
+    const strategy = new UserJwtStrategy();
+    const ctx = {
+      oauth: {
+        subject: 'user-123',
+        accessTokenHash: 'hashed-token-must-not-be-used',
+      },
+      rockUserToken: 'raw-rock-user-token',
+    } as unknown as OAuthRockContext;
+
+    const headers = await strategy.getHeaders(ctx, {
+      method: 'GET',
+      path: '/api/People/1',
+    });
+
+    expect(headers).toEqual({
+      Authorization: 'Bearer raw-rock-user-token',
+    });
+    expect(headers.Authorization).not.toContain('hashed-token-must-not-be-used');
+  });
+
+  it('throws when the raw Rock user token is missing', async () => {
+    const strategy = new UserJwtStrategy();
+    const ctx = {
+      oauth: {
+        subject: 'user-123',
+        accessTokenHash: 'hashed-token-must-not-be-used',
+      },
+    } as unknown as OAuthRockContext;
+
+    await expect(strategy.getHeaders(ctx, {
+      method: 'GET',
+      path: '/api/People/1',
+    })).rejects.toThrow('Missing Rock user token');
   });
 });
