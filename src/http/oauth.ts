@@ -288,6 +288,14 @@ export function createAuthMiddleware(options: VerifyTokenOptions = {}) {
       if (scopes.has('read')) mcpScopes.add('read');
       if (scopes.has('write')) mcpScopes.add('write');
 
+      const subject = typeof payload.sub === 'string' && payload.sub.trim().length > 0
+        ? payload.sub
+        : undefined;
+      if (!subject) {
+        res.status(401).json({ error: 'Invalid token subject' });
+        return;
+      }
+
       // Create session ID and request ID
       const sessionId = req.headers['x-mcp-session-id'] as string || crypto.randomUUID();
       const requestId = crypto.randomUUID();
@@ -303,7 +311,7 @@ export function createAuthMiddleware(options: VerifyTokenOptions = {}) {
         mode: 'readonly', // default, resolved later
         scopes: mcpScopes,
         oauth: {
-          subject: payload.sub || '',
+          subject,
           email: payload.email,
           name: payload.name,
           accessTokenHash,
