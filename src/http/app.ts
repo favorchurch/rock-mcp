@@ -12,6 +12,9 @@ import { DiscoveryService } from '../discovery/discovery-service.js';
 import { InMemoryDatasetStore, RedisDatasetStore, DatasetStore } from '../tools/dataset-store.js';
 import { getRockGuideText } from '../mcp/guide-text.js';
 import { createRedisClient } from '../rock/redis.js';
+import { getLandingPageHtml } from './landing-page.js';
+import path from 'path';
+import fs from 'fs';
 
 export function createApp() {
   const app = express();
@@ -137,6 +140,34 @@ export function createApp() {
   app.post('/mcp/readonly', authMiddleware, handleMcpRequest('readonly'));
   app.post('/mcp/readwrite', authMiddleware, handleMcpRequest('readwrite'));
   app.post('/mcp', authMiddleware, handleMcpRequest('mcp'));
+
+  app.get('/', (_req: any, res: any) => {
+    const redisConfigured = !!redis;
+    const rockUrl = process.env.ROCK_PUBLIC_URL || process.env.ROCK_API_URL || '';
+    const version = '1.0.0';
+    res.setHeader('Content-Type', 'text/html');
+    res.send(getLandingPageHtml({ redisConfigured, rockUrl, version }));
+  });
+
+  app.get('/static/icon.png', (_req: any, res: any) => {
+    const iconPath = path.join(process.cwd(), 'static/icon.png');
+    if (fs.existsSync(iconPath)) {
+      res.setHeader('Content-Type', 'image/png');
+      res.sendFile(iconPath);
+    } else {
+      res.status(404).send('Not Found');
+    }
+  });
+
+  app.get('/favicon.ico', (_req: any, res: any) => {
+    const iconPath = path.join(process.cwd(), 'static/icon.png');
+    if (fs.existsSync(iconPath)) {
+      res.setHeader('Content-Type', 'image/png');
+      res.sendFile(iconPath);
+    } else {
+      res.status(404).send('Not Found');
+    }
+  });
 
   return app;
 }

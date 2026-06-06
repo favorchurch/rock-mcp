@@ -13,6 +13,9 @@ describe('HTTP MCP Endpoints', () => {
     expect(routes).toContain('/mcp/readonly');
     expect(routes).toContain('/mcp/readwrite');
     expect(routes).toContain('/mcp');
+    expect(routes).toContain('/');
+    expect(routes).toContain('/static/icon.png');
+    expect(routes).toContain('/favicon.ico');
   });
 
   it('should have dataset store, instructions, and guide wiring', async () => {

@@ -2,14 +2,14 @@
   "name": "rock-mcp",
   "version": "1.0.0",
   "description": "Rock RMS MCP Server and MCP Apps for Favor Church Manila",
-  "main": "dist/index.js",
+  "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "dev:stdio": "tsx src/index.ts --stdio",
+    "dev": "tsx src/server.ts",
+    "dev:stdio": "tsx src/server.ts --stdio",
     "build": "tsc && npm run build:apps",
     "build:apps": "vite build",
-    "start": "node dist/index.js",
+    "start": "node dist/server.js",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
