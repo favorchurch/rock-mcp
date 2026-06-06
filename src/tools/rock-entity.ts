@@ -229,8 +229,9 @@ export const rockEntityTool: GatewayTool = {
           endpoint = `/api/v2/models/${model}/search/${searchKey}`;
         } else {
           // Generic EntitySearch endpoint (v2 saved-search-by-key)
-          // Note: May need verification against the live Rock 17.7 instance
-          endpoint = `/api/v2/EntitySearch/${searchKey}`;
+          // Note (Rock v17.7): Only v2 endpoint works for saved searches.
+          // No v1 fallback exists (/api/EntitySearches returns 404).
+          endpoint = `/api/v2/models/entitysearches/search/${searchKey}`;
         }
 
         const queryBag = {
@@ -265,7 +266,8 @@ export const rockEntityTool: GatewayTool = {
       if (searchKey) {
         try {
           // Use the EntitySearch endpoint with large limit to fetch all results
-          const result = await rockClient.post(ctx, `/api/v2/EntitySearch/${searchKey}`, {
+          // Note (Rock v17.7): Only v2 endpoint works for saved searches.
+          const result = await rockClient.post(ctx, `/api/v2/models/entitysearches/search/${searchKey}`, {
             Offset: 0,
             Limit: 1000,
           });
