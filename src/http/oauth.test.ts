@@ -5,6 +5,7 @@ import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   Auth0OAuthTokenVerifier,
+  authInfoToOAuthRockContext,
   createAuthMiddleware,
   createOAuthContextAdapterMiddleware,
   fetchAuth0OAuthMetadata,
@@ -297,6 +298,56 @@ describe('OAuth context adapter', () => {
       ip: '203.0.113.10',
       userAgent: 'vitest',
     });
+  });
+
+  it('rejects AuthInfo missing extra.sub even when clientId is present', () => {
+    const auth: AuthInfo = {
+      token: 'raw-access-token',
+      clientId: 'client-123',
+      scopes: ['read'],
+      extra: {
+        email: 'rico@example.com',
+        name: 'Rico',
+        iss: 'https://favor.us.auth0.com/',
+      },
+    };
+    const req = {
+      auth,
+      headers: {},
+      socket: {},
+    } as unknown as Request;
+
+    expect(() => authInfoToOAuthRockContext(auth, req)).toThrow(/subject/i);
+  });
+
+  it('passes adapter errors to Express when AuthInfo is missing extra.sub', async () => {
+    const auth: AuthInfo = {
+      token: 'raw-access-token',
+      clientId: 'client-123',
+      scopes: ['read'],
+      extra: {
+        email: 'rico@example.com',
+        name: 'Rico',
+        iss: 'https://favor.us.auth0.com/',
+      },
+    };
+    const req = {
+      auth,
+      headers: {},
+      socket: {},
+    } as unknown as Request & { oauthContext?: any };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await createOAuthContextAdapterMiddleware()(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(req.oauthContext).toBeUndefined();
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
 

@@ -210,9 +210,9 @@ export function authInfoToOAuthRockContext(authInfo: AuthInfo, req: Request): OA
   const mcpScopes = new Set<'read' | 'write'>();
   if (authInfo.scopes.includes('read')) mcpScopes.add('read');
   if (authInfo.scopes.includes('write')) mcpScopes.add('write');
-  const subject = stringClaim(claims.sub) || stringClaim(authInfo.clientId);
+  const subject = stringClaim(claims.sub);
   if (!subject) {
-    throw new Error('OAuth auth info subject is required');
+    throw new Error('OAuth auth info subject (sub) is required');
   }
 
   const ctx: OAuthRockContext = {
@@ -242,15 +242,19 @@ export function authInfoToOAuthRockContext(authInfo: AuthInfo, req: Request): OA
 }
 
 export function createOAuthContextAdapterMiddleware(): RequestHandler {
-  return (req, res, next) => {
+  return (req, _res, next) => {
     const authInfo = (req as Request & { auth?: AuthInfo }).auth;
     if (!authInfo) {
-      res.status(500).json({ error: 'OAuth auth info not initialized' });
+      next(new Error('OAuth auth info not initialized'));
       return;
     }
 
-    req.oauthContext = authInfoToOAuthRockContext(authInfo, req);
-    next();
+    try {
+      req.oauthContext = authInfoToOAuthRockContext(authInfo, req);
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }
 
