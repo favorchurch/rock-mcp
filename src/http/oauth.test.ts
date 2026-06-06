@@ -247,6 +247,26 @@ describe('Auth0OAuthTokenVerifier', () => {
     await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toBeInstanceOf(InvalidTokenError);
     await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toThrow(/subject/i);
   });
+
+  it('rejects JWT payloads with whitespace-only sub', async () => {
+    const config = loadAuth0Config({
+      AUTH0_ISSUER: 'https://favor.us.auth0.com/',
+      AUTH0_AUDIENCE: 'https://rock.example.com/api',
+      MCP_PUBLIC_URL: 'https://mcp.example.com/mcp',
+    });
+
+    const verifier = new Auth0OAuthTokenVerifier(config, {
+      jwtVerify: vi.fn(async () => ({
+        payload: {
+          sub: '   ',
+          scope: 'read write',
+        },
+      })),
+    });
+
+    await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toBeInstanceOf(InvalidTokenError);
+    await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toThrow(/subject/i);
+  });
 });
 
 describe('OAuth context adapter', () => {
@@ -349,6 +369,27 @@ describe('OAuth context adapter', () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
   });
+
+  it('rejects AuthInfo with whitespace-only extra.sub even when clientId is present', () => {
+    const auth: AuthInfo = {
+      token: 'raw-access-token',
+      clientId: 'client-123',
+      scopes: ['read'],
+      extra: {
+        sub: '   ',
+        email: 'rico@example.com',
+        name: 'Rico',
+        iss: 'https://favor.us.auth0.com/',
+      },
+    };
+    const req = {
+      auth,
+      headers: {},
+      socket: {},
+    } as unknown as Request;
+
+    expect(() => authInfoToOAuthRockContext(auth, req)).toThrow(/subject/i);
+  });
 });
 
 describe('OAuth Middleware', () => {
@@ -427,6 +468,34 @@ describe('OAuth Middleware', () => {
       verifyToken: async () => ({
         isValid: true,
         payload: { scope: 'read write', email: 'test@example.com' }
+      }),
+    });
+
+    const req = {
+      headers: { authorization: 'Bearer token' },
+      ip: '127.0.0.1',
+      headers_info: { 'user-agent': 'vitest' }
+    } as unknown as Request & { oauthContext?: any };
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token subject' });
+    expect(next).not.toHaveBeenCalled();
+    expect(req.oauthContext).toBeUndefined();
+  });
+
+  it('should return 401 when token has read scope but whitespace-only subject', async () => {
+    const middleware = createAuthMiddleware({
+      verifyToken: async () => ({
+        isValid: true,
+        payload: { sub: '   ', scope: 'read write', email: 'test@example.com' }
       }),
     });
 

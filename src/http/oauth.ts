@@ -42,6 +42,7 @@ export interface OAuthRockContext {
 
 // Extend Request type to include our oauthContext
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       oauthContext?: OAuthRockContext;
@@ -183,11 +184,11 @@ export class Auth0OAuthTokenVerifier implements OAuthTokenVerifier {
         audience: this.config.audience,
       });
       const claims = payload as Record<string, unknown>;
-      const subject = stringClaim(claims.sub);
+      const subject = nonEmptyTrimmedClaim(claims.sub);
       if (!subject) {
         throw new InvalidTokenError('Access token subject (sub) is required');
       }
-      const clientId = stringClaim(claims.azp) || stringClaim(claims.client_id) || subject;
+      const clientId = nonEmptyTrimmedClaim(claims.azp) || nonEmptyTrimmedClaim(claims.client_id) || subject;
 
       return {
         token,
@@ -210,7 +211,7 @@ export function authInfoToOAuthRockContext(authInfo: AuthInfo, req: Request): OA
   const mcpScopes = new Set<'read' | 'write'>();
   if (authInfo.scopes.includes('read')) mcpScopes.add('read');
   if (authInfo.scopes.includes('write')) mcpScopes.add('write');
-  const subject = stringClaim(claims.sub);
+  const subject = nonEmptyTrimmedClaim(claims.sub);
   if (!subject) {
     throw new Error('OAuth auth info subject (sub) is required');
   }
@@ -391,8 +392,8 @@ function parseUrl(
   let url: URL;
   try {
     url = new URL(value);
-  } catch (_err) {
-    throw new Error(`${envName} must be a valid absolute URL`);
+  } catch (cause) {
+    throw new Error(`${envName} must be a valid absolute URL`, { cause });
   }
 
   if (options.requireHttps) {
@@ -407,11 +408,11 @@ function requireHttpsUrl(value: unknown, fieldName: string): string {
   try {
     const url = new URL(stringValue);
     assertAllowedUrlScheme(url, `Auth0 discovery metadata ${fieldName}`, false);
-  } catch (_err) {
-    if (_err instanceof Error && _err.message.includes(fieldName)) {
-      throw _err;
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.includes(fieldName)) {
+      throw cause;
     }
-    throw new Error(`Auth0 discovery metadata ${fieldName} must be a valid absolute HTTPS URL`);
+    throw new Error(`Auth0 discovery metadata ${fieldName} must be a valid absolute HTTPS URL`, { cause });
   }
 
   return stringValue;
@@ -444,6 +445,15 @@ function isLoopbackHost(hostname: string): boolean {
 
 function stringClaim(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function nonEmptyTrimmedClaim(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function extractScopes(claims: Record<string, unknown>): string[] {
