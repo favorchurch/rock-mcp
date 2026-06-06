@@ -9,8 +9,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { allTools } from '../tools/index.js';
 import { registerReportViewerApp } from '../mcp/apps.js';
 import { DiscoveryService } from '../discovery/discovery-service.js';
-import { InMemoryDatasetStore } from '../tools/dataset-store.js';
+import { InMemoryDatasetStore, RedisDatasetStore, DatasetStore } from '../tools/dataset-store.js';
 import { getRockGuideText } from '../mcp/guide-text.js';
+import { createRedisClient } from '../rock/redis.js';
 
 export function createApp() {
   const app = express();
@@ -23,9 +24,20 @@ export function createApp() {
     apiKey: process.env.ROCK_API_KEY || '',
   });
 
-  const discoveryService = new DiscoveryService(rockClient);
+  // Initialize Redis and select appropriate stores
+  const redis = createRedisClient();
+  const discoveryService = new DiscoveryService(rockClient, redis);
   const rockUserResolver = new RockUserResolver(rockClient);
-  const datasetStore = new InMemoryDatasetStore();
+  const datasetStore: DatasetStore = redis
+    ? new RedisDatasetStore(redis)
+    : new InMemoryDatasetStore();
+
+  // Log which caching mode is active
+  if (redis) {
+    console.log('[Rock MCP] Using Redis cache for discovery and datasets');
+  } else {
+    console.log('[Rock MCP] Using in-memory cache (Redis not configured)');
+  }
 
   const authMiddleware = createAuthMiddleware();
 
