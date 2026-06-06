@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import type { Redis } from '@upstash/redis';
 import { RockClient } from '../rock/client.js';
 import { OAuthRockContext } from '../http/oauth.js';
 import {
@@ -41,7 +42,7 @@ export class DiscoveryService {
 
   constructor(
     private rockClient: RockClient,
-    private redis: any = null // Expect Upstash Redis client or null
+    private redis: Redis | null = null
   ) {}
 
   private getRedisKey(): string {

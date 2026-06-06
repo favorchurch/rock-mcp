@@ -120,8 +120,17 @@ export class RedisDatasetStore implements DatasetStore {
     if (!cached) return null;
 
     // Handle both string and object returns from Upstash
-    const dataset: StoredDataset =
-      typeof cached === 'string' ? JSON.parse(cached) : (cached as StoredDataset);
+    let dataset: StoredDataset;
+    if (typeof cached === 'string') {
+      try {
+        dataset = JSON.parse(cached);
+      } catch {
+        // Treat malformed/tampered entry as cache miss
+        return null;
+      }
+    } else {
+      dataset = cached as StoredDataset;
+    }
 
     // Check expiration
     if (new Date() > new Date(dataset.expiresAt)) {
