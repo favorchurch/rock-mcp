@@ -6,6 +6,32 @@ import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { escapeODataString } from '../rock/query.js';
 
+/**
+ * Allowlisted models for raw search/count-by-where operations.
+ * searchByKey, get, and attributeValues are not subject to this allowlist.
+ */
+const READ_MODEL_ALLOWLIST = new Set([
+  'people',
+  'groups',
+  'grouptypes',
+  'groupmembers',
+  'attendances',
+  'attendanceoccurrences',
+  'campuses',
+  'reports',
+  'connectionrequests',
+  'connectiontypes',
+  'workflows',
+  'workflowtypes',
+  'definedtypes',
+  'definedvalues',
+  'attributes',
+  'schedules',
+  'locations',
+  'notes',
+  'persons',
+]);
+
 const rockEntitySchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('get'),
@@ -111,6 +137,16 @@ export const rockEntityTool: GatewayTool = {
 
     if (parsed.action === 'search') {
       const { model, where, offset, limit } = parsed;
+
+      // Enforce model allowlist for raw search
+      const normalizedModel = model.toLowerCase();
+      if (!READ_MODEL_ALLOWLIST.has(normalizedModel)) {
+        return formatResponse(parsed.action, ctx, null, {
+          code: 'MODEL_NOT_ALLOWED',
+          message: `Raw search is not allowed on model ${model}. Use searchByKey (saved Entity Search) instead.`,
+        });
+      }
+
       try {
         const result = await rockClient.post(ctx, `/api/v2/models/${model}/search`, {
           Where: where,
@@ -147,8 +183,74 @@ export const rockEntityTool: GatewayTool = {
       }
     }
 
+    if (parsed.action === 'searchByKey') {
+      const { model, searchKey, refinements, offset, limit, shape } = parsed;
+
+      try {
+        let endpoint: string;
+        if (model) {
+          // Model-specific search endpoint
+          endpoint = `/api/v2/models/${model}/search/${searchKey}`;
+        } else {
+          // Generic EntitySearch endpoint (v2 saved-search-by-key)
+          // Note: May need verification against the live Rock 17.7 instance
+          endpoint = `/api/v2/EntitySearch/${searchKey}`;
+        }
+
+        const queryBag = {
+          ...refinements,
+          Offset: offset,
+          Limit: limit,
+        };
+
+        const result = await rockClient.post(ctx, endpoint, queryBag);
+
+        // Handle shape: 'count' returns only the count/length
+        if (shape === 'count') {
+          const count = Array.isArray(result) ? result.length : 1;
+          return formatResponse(parsed.action, ctx, count);
+        }
+
+        return formatResponse(parsed.action, ctx, result);
+      } catch (err: any) {
+        return formatResponse(parsed.action, ctx, null, {
+          code: 'SEARCH_BY_KEY_ERROR',
+          message: `Saved Entity Search failed: ${err.message}`,
+        });
+      }
+    }
+
     if (parsed.action === 'count') {
-      const { model, where } = parsed;
+      const { model, where, searchKey } = parsed;
+
+      // If searchKey is provided, use the saved search path
+      if (searchKey) {
+        try {
+          // Use the EntitySearch endpoint with large limit to fetch all results
+          const result = await rockClient.post(ctx, `/api/v2/EntitySearch/${searchKey}`, {
+            Offset: 0,
+            Limit: 1000,
+          });
+          const count = Array.isArray(result) ? result.length : 1;
+          return formatResponse(parsed.action, ctx, { count });
+        } catch (err: any) {
+          return formatResponse(parsed.action, ctx, null, {
+            code: 'COUNT_ERROR',
+            message: `Count with searchKey failed: ${err.message}`,
+          });
+        }
+      }
+
+      // Otherwise, use where-based count (raw LINQ)
+      // Enforce model allowlist for raw count-by-where
+      const normalizedModel = model.toLowerCase();
+      if (!READ_MODEL_ALLOWLIST.has(normalizedModel)) {
+        return formatResponse(parsed.action, ctx, null, {
+          code: 'MODEL_NOT_ALLOWED',
+          message: `Raw count is not allowed on model ${model}. Use searchByKey (saved Entity Search) instead.`,
+        });
+      }
+
       try {
         const result = await rockClient.post(ctx, `/api/v2/models/${model}/search`, {
           Where: where,
@@ -187,10 +289,8 @@ export const rockEntityTool: GatewayTool = {
       }
     }
 
-    // Default placeholder for other actions
-    return formatResponse(parsed.action, ctx, null, {
-      code: 'NOT_IMPLEMENTED',
-      message: `Action ${parsed.action} is not yet implemented.`,
-    });
+    // Exhaustiveness check: if we get here, a new action type wasn't handled
+    const _: never = parsed;
+    return _ as never;
   },
 };
