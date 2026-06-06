@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { describe, it, expect, vi } from 'vitest';
 import type { Request, Response } from 'express';
+import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import {
   Auth0OAuthTokenVerifier,
@@ -43,6 +44,28 @@ describe('Auth0 OAuth config', () => {
       AUTH0_DOMAIN: 'favor.us.auth0.com',
       AUTH0_AUDIENCE: 'api',
     })).toThrow(/MCP_PUBLIC_URL/);
+  });
+
+  it('rejects an Auth0 issuer that is not https', () => {
+    expect(() => loadAuth0Config({
+      AUTH0_ISSUER: 'http://favor.us.auth0.com/',
+      AUTH0_AUDIENCE: 'api',
+      MCP_PUBLIC_URL: 'https://mcp.example.com/mcp',
+    })).toThrow(/AUTH0_ISSUER.*https/i);
+  });
+
+  it('rejects a non-https MCP public URL unless it is explicit localhost loopback', () => {
+    expect(() => loadAuth0Config({
+      AUTH0_DOMAIN: 'favor.us.auth0.com',
+      AUTH0_AUDIENCE: 'api',
+      MCP_PUBLIC_URL: 'http://mcp.example.com/mcp',
+    })).toThrow(/MCP_PUBLIC_URL.*https/i);
+
+    expect(loadAuth0Config({
+      AUTH0_DOMAIN: 'favor.us.auth0.com',
+      AUTH0_AUDIENCE: 'api',
+      MCP_PUBLIC_URL: 'http://localhost:3000/mcp',
+    }).resourceServerUrl.toString()).toBe('http://localhost:3000/mcp');
   });
 });
 
@@ -132,6 +155,26 @@ describe('Auth0 OAuth metadata discovery', () => {
 
     await expect(fetchAuth0OAuthMetadata({ config, fetchFn })).rejects.toThrow(/authorization_endpoint/i);
   });
+
+  it('rejects discovery metadata when a required endpoint is not https', async () => {
+    const config = loadAuth0Config({
+      AUTH0_DOMAIN: 'favor.us.auth0.com',
+      AUTH0_AUDIENCE: 'api',
+      MCP_PUBLIC_URL: 'https://mcp.example.com/mcp',
+    });
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({
+      issuer: 'https://favor.us.auth0.com/',
+      authorization_endpoint: 'https://favor.us.auth0.com/authorize',
+      token_endpoint: 'http://favor.us.auth0.com/oauth/token',
+      jwks_uri: 'https://favor.us.auth0.com/.well-known/jwks.json',
+      registration_endpoint: 'https://favor.us.auth0.com/oidc/register',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await expect(fetchAuth0OAuthMetadata({ config, fetchFn })).rejects.toThrow(/token_endpoint.*https/i);
+  });
 });
 
 describe('Auth0OAuthTokenVerifier', () => {
@@ -182,6 +225,26 @@ describe('Auth0OAuthTokenVerifier', () => {
         name: 'Rico',
       }),
     });
+  });
+
+  it('rejects JWT payloads that do not include sub', async () => {
+    const config = loadAuth0Config({
+      AUTH0_ISSUER: 'https://favor.us.auth0.com/',
+      AUTH0_AUDIENCE: 'https://rock.example.com/api',
+      MCP_PUBLIC_URL: 'https://mcp.example.com/mcp',
+    });
+
+    const verifier = new Auth0OAuthTokenVerifier(config, {
+      jwtVerify: vi.fn(async () => ({
+        payload: {
+          azp: 'client-123',
+          scope: 'read write',
+        },
+      })),
+    });
+
+    await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toBeInstanceOf(InvalidTokenError);
+    await expect(verifier.verifyAccessToken('raw-access-token')).rejects.toThrow(/subject/i);
   });
 });
 
