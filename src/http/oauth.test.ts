@@ -421,4 +421,32 @@ describe('OAuth Middleware', () => {
     expect(req.oauthContext.scopes).toContain('read');
     expect(req.oauthContext.scopes).toContain('write');
   });
+
+  it('should return 401 when token has read scope but no subject', async () => {
+    const middleware = createAuthMiddleware({
+      verifyToken: async () => ({
+        isValid: true,
+        payload: { scope: 'read write', email: 'test@example.com' }
+      }),
+    });
+
+    const req = {
+      headers: { authorization: 'Bearer token' },
+      ip: '127.0.0.1',
+      headers_info: { 'user-agent': 'vitest' }
+    } as unknown as Request & { oauthContext?: any };
+
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid token subject' });
+    expect(next).not.toHaveBeenCalled();
+    expect(req.oauthContext).toBeUndefined();
+  });
 });
