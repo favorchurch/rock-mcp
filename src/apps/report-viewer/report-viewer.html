@@ -52,6 +52,20 @@
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     }
 
+    .header-content {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .logo-img {
+      width: 48px;
+      height: 48px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      object-fit: cover;
+    }
+
     .title-group h1 {
       font-size: 1.8rem;
       color: #ffffff;
@@ -220,9 +234,12 @@
 </head>
 <body>
   <header>
-    <div class="title-group">
-      <h1 id="report-title">Rock Report</h1>
-      <p id="report-subtitle">Loading dataset...</p>
+    <div class="header-content">
+      <img src="../../../static/icon.png" alt="Rock MCP Logo" class="logo-img">
+      <div class="title-group">
+        <h1 id="report-title">Rock Report</h1>
+        <p id="report-subtitle">Loading dataset...</p>
+      </div>
     </div>
     <div class="actions">
       <button id="btn-refresh" class="secondary">Refresh</button>
