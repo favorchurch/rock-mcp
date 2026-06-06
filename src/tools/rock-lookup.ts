@@ -114,8 +114,19 @@ export const rockLookupTool: GatewayTool = {
               name: `${p.NickName || p.FirstName} ${p.LastName}`,
             })));
           } catch (err: any) {
-            // Log but don't fail the whole request
-            console.error('Failed to search people:', err.message);
+            // v1 fallback
+            try {
+              const people = await rockClient.get(ctx, `/api/People?$filter=(substringof(${quoteODataString(query)}, NickName) eq true) or (substringof(${quoteODataString(query)}, LastName) eq true)&$top=${limit}`);
+              results.push(...(people || []).map((p: any) => ({
+                kind: 'person',
+                id: p.Id,
+                guid: p.Guid,
+                name: `${p.NickName || p.FirstName} ${p.LastName}`,
+              })));
+            } catch (fallbackErr: any) {
+              // Log but don't fail the whole request
+              console.error('Failed to search people (v1 fallback):', fallbackErr.message);
+            }
           }
         }
 

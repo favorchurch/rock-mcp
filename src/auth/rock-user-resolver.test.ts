@@ -90,4 +90,41 @@ describe('RockUserResolver', () => {
 
     expect(result.isRsrAdmin).toBe(true);
   });
+
+  it('should return isRsrAdmin true when v2 fails and v1 fallback returns active membership', async () => {
+    const oauth = {
+      subject: 'user-456',
+      email: 'rsr-admin@example.com',
+      accessTokenHash: 'hash',
+    };
+
+    mockClient.post = vi.fn().mockImplementation(async (_ctx, path, _body: any) => {
+      if (path.includes('/people/search')) {
+        return [{ Id: 2, PrimaryAliasId: 20, Guid: '550e8400-e29b-41d4-a716-446655440002' }];
+      }
+      if (path.includes('/groups/search')) {
+        return [{ Id: 99, Name: 'RSR - Rock Administration' }];
+      }
+      if (path.includes('/groupmembers/search')) {
+        // Simulate v2 failure (401 unauthorized)
+        throw new Error('Unauthorized');
+      }
+      return [];
+    });
+
+    mockClient.get = vi.fn().mockImplementation(async (_ctx, path) => {
+      // v1 fallback: return active membership with enum name 'Active'
+      if (path.includes('/api/GroupMembers')) {
+        // Verify the filter contains 'Active' not '1'
+        expect(path).toContain("GroupMemberStatus eq 'Active'");
+        return [{ Id: 1002, PersonId: 2, GroupId: 99, GroupMemberStatus: 1 }]; // v1 response can still have numeric status
+      }
+      return [];
+    });
+
+    const result = await resolver.resolve(mockCtx, oauth);
+
+    expect(result.isRsrAdmin).toBe(true);
+    expect(mockClient.get).toHaveBeenCalled();
+  });
 });

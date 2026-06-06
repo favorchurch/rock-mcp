@@ -154,7 +154,7 @@ export class RockUserResolver {
         isMember = members && members.length > 0;
       } catch {
         try {
-          const members = await this.rockClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 1`);
+          const members = await this.rockClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 'Active'`);
           isMember = members && members.length > 0;
         } catch {
           // Ignore
