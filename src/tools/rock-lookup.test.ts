@@ -315,6 +315,30 @@ describe('rock_lookup tool', () => {
       expect(response.result[0].name).toBe('Small Group Alpha');
     });
 
+    it('should fallback to v1 API when v2 person search fails', async () => {
+      mockRockClient.post.mockRejectedValueOnce(new Error('Unauthorized'));
+      mockRockClient.get.mockResolvedValueOnce([
+        { Id: 3, Guid: 'person-3', NickName: 'Alex', LastName: 'Johnson' },
+      ]);
+
+      const result = await rockLookupTool.handle(
+        { action: 'quickSearch', query: 'alex', kinds: ['person'], limit: 10 },
+        null,
+        mockCtx
+      );
+      expect(result.content[0].type).toBe('text');
+      const response = JSON.parse(result.content[0].text!);
+      expect(response.ok).toBe(true);
+      expect(response.result.length).toBe(1);
+      expect(response.result[0].kind).toBe('person');
+      expect(response.result[0].name).toBe('Alex Johnson');
+      // Verify v1 API was called with correct OData filter
+      expect(mockRockClient.get).toHaveBeenCalledWith(
+        mockCtx,
+        expect.stringContaining('/api/People?$filter=')
+      );
+    });
+
     it('should perform case-insensitive filtering', async () => {
       mockRockClient.post.mockResolvedValue([]);
 
