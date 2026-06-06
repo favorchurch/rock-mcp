@@ -107,7 +107,10 @@ export function loadAuth0Config(env: OAuthEnv = process.env): Auth0OAuthConfig {
   return {
     issuer,
     audience,
-    resourceServerUrl: parseUrl(resourceServerUrlValue, 'MCP_PUBLIC_URL'),
+    resourceServerUrl: parseUrl(resourceServerUrlValue, 'MCP_PUBLIC_URL', {
+      requireHttps: true,
+      allowLoopbackHttp: true,
+    }),
     discoveryUrl: new URL('.well-known/openid-configuration', issuer),
   };
 }
@@ -132,19 +135,19 @@ export async function fetchAuth0OAuthMetadata(
     throw new Error(`Auth0 discovery metadata issuer mismatch: expected ${config.issuer}, got ${issuer}`);
   }
 
-  const authorizationEndpoint = requireHttpUrl(metadata.authorization_endpoint, 'authorization_endpoint');
-  const tokenEndpoint = requireHttpUrl(metadata.token_endpoint, 'token_endpoint');
+  const authorizationEndpoint = requireHttpsUrl(metadata.authorization_endpoint, 'authorization_endpoint');
+  const tokenEndpoint = requireHttpsUrl(metadata.token_endpoint, 'token_endpoint');
   const registrationEndpoint = stringClaim(metadata.registration_endpoint);
   if (!registrationEndpoint) {
     throw new Error('Auth0 Dynamic Client Registration endpoint is missing; enable DCR on the Auth0 tenant');
   }
-  requireHttpUrl(registrationEndpoint, 'registration_endpoint');
+  requireHttpsUrl(registrationEndpoint, 'registration_endpoint');
 
   const jwksUri = stringClaim(metadata.jwks_uri);
   if (!jwksUri) {
     throw new Error('Auth0 discovery metadata is missing jwks_uri');
   }
-  requireHttpUrl(jwksUri, 'jwks_uri');
+  requireHttpsUrl(jwksUri, 'jwks_uri');
 
   return {
     ...metadata,
@@ -180,7 +183,11 @@ export class Auth0OAuthTokenVerifier implements OAuthTokenVerifier {
         audience: this.config.audience,
       });
       const claims = payload as Record<string, unknown>;
-      const clientId = stringClaim(claims.azp) || stringClaim(claims.client_id) || stringClaim(claims.sub) || '';
+      const subject = stringClaim(claims.sub);
+      if (!subject) {
+        throw new InvalidTokenError('Access token subject (sub) is required');
+      }
+      const clientId = stringClaim(claims.azp) || stringClaim(claims.client_id) || subject;
 
       return {
         token,
@@ -203,13 +210,17 @@ export function authInfoToOAuthRockContext(authInfo: AuthInfo, req: Request): OA
   const mcpScopes = new Set<'read' | 'write'>();
   if (authInfo.scopes.includes('read')) mcpScopes.add('read');
   if (authInfo.scopes.includes('write')) mcpScopes.add('write');
+  const subject = stringClaim(claims.sub) || stringClaim(authInfo.clientId);
+  if (!subject) {
+    throw new Error('OAuth auth info subject is required');
+  }
 
   const ctx: OAuthRockContext = {
     endpoint: 'mcp',
     mode: 'readonly',
     scopes: mcpScopes,
     oauth: {
-      subject: stringClaim(claims.sub) || authInfo.clientId,
+      subject,
       email: stringClaim(claims.email),
       name: stringClaim(claims.name),
       accessTokenHash,
@@ -351,35 +362,72 @@ function firstEnvValue(env: OAuthEnv, keys: string[]): string | undefined {
 
 function normalizeIssuer(issuerOrDomain: string): string {
   const trimmed = issuerOrDomain.trim();
-  const url = trimmed.includes('://') ? new URL(trimmed) : new URL(`https://${trimmed}`);
+  const url = trimmed.includes('://')
+    ? parseUrl(trimmed, 'AUTH0_ISSUER/AUTH0_DOMAIN', { requireHttps: true })
+    : parseUrl(`https://${trimmed}`, 'AUTH0_ISSUER/AUTH0_DOMAIN', { requireHttps: true });
   url.search = '';
   url.hash = '';
   const normalized = url.toString();
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
 }
 
-function parseUrl(value: string, envName: string): URL {
+function parseUrl(
+  value: string,
+  envName: string,
+  options: { requireHttps?: boolean; allowLoopbackHttp?: boolean } = {}
+): URL {
+  let url: URL;
   try {
-    return new URL(value);
+    url = new URL(value);
   } catch (_err) {
     throw new Error(`${envName} must be a valid absolute URL`);
   }
-}
 
-function requireHttpUrl(value: unknown, fieldName: string): string {
-  const stringValue = typeof value === 'string' ? value : '';
-  let url: URL;
-  try {
-    url = new URL(stringValue);
-  } catch (_err) {
-    throw new Error(`Auth0 discovery metadata ${fieldName} must be a valid absolute http(s) URL`);
+  if (options.requireHttps) {
+    assertAllowedUrlScheme(url, envName, options.allowLoopbackHttp === true);
   }
 
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Auth0 discovery metadata ${fieldName} must be a valid absolute http(s) URL`);
+  return url;
+}
+
+function requireHttpsUrl(value: unknown, fieldName: string): string {
+  const stringValue = typeof value === 'string' ? value : '';
+  try {
+    const url = new URL(stringValue);
+    assertAllowedUrlScheme(url, `Auth0 discovery metadata ${fieldName}`, false);
+  } catch (_err) {
+    if (_err instanceof Error && _err.message.includes(fieldName)) {
+      throw _err;
+    }
+    throw new Error(`Auth0 discovery metadata ${fieldName} must be a valid absolute HTTPS URL`);
   }
 
   return stringValue;
+}
+
+function assertAllowedUrlScheme(url: URL, label: string, allowLoopbackHttp: boolean): void {
+  if (url.protocol === 'https:') {
+    return;
+  }
+
+  if (url.protocol === 'http:') {
+    if (allowLoopbackHttp && isLoopbackHost(url.hostname)) {
+      return;
+    }
+
+    if (allowLoopbackHttp) {
+      throw new Error(`${label} must use HTTPS unless it points to localhost loopback over HTTP`);
+    }
+
+    throw new Error(`${label} must use HTTPS`);
+  }
+
+  throw new Error(`${label} has unsupported URL scheme: ${url.protocol}`);
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
 }
 
 function stringClaim(value: unknown): string | undefined {
