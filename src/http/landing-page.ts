@@ -560,7 +560,7 @@ export function getLandingPageHtml(options: {
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent-hover)"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
         <span>MCP Connections</span>
       </div>
-      <p class="section-subtitle">Exposes endpoints tailored to different authentication scopes and security levels.</p>
+      <p class="section-subtitle">Exposes OAuth-protected endpoints tailored to different user scopes and security levels.</p>
 
       <div class="endpoints-grid">
         <div class="endpoint-card">
@@ -657,7 +657,7 @@ export function getLandingPageHtml(options: {
 
       <div id="tab-claude" class="tab-content active">
         <div class="guide-text">
-          <p>To register the Favor Church Rock MCP server in your Claude Desktop app, edit your configuration file:</p>
+          <p>To register the Favor Church Rock MCP server in your Claude Desktop app, point the client at the MCP URL. Claude will discover the OAuth metadata and prompt you to sign in with Rock/Auth0.</p>
           <ul>
             <li><strong>MacOS:</strong> <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></li>
             <li><strong>Windows:</strong> <code>%APPDATA%\\Claude\\claude_desktop_config.json</code></li>
@@ -673,10 +673,7 @@ export function getLandingPageHtml(options: {
         "@modelcontextprotocol/sdk",
         "connect",
         "https://rock-mcp.favor.church/mcp"
-      ],
-      "env": {
-        "AUTHORIZATION": "Bearer YOUR_JWT_TOKEN"
-      }
+      ]
     }
   }
 }</code></pre>
@@ -684,15 +681,15 @@ export function getLandingPageHtml(options: {
 
       <div id="tab-cursor" class="tab-content">
         <div class="guide-text">
-          <p>Cursor allows connecting to MCP servers via SSE (Server-Sent Events) or Command mode.</p>
-          <p>For SSE connection (recommended for remote endpoints):</p>
+          <p>Cursor can connect to the remote MCP endpoint and complete the OAuth login in-browser through Rock/Auth0.</p>
+          <p>Use the Smart Gateway URL for normal access:</p>
           <ol style="margin-left: 1.5rem; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
             <li>Open Cursor Settings > Features > MCP.</li>
             <li>Click <strong>+ Add New MCP Server</strong>.</li>
             <li>Fill in:
               <ul>
                 <li><strong>Name:</strong> <code>rock-mcp</code></li>
-                <li><strong>Type:</strong> <code>command</code> (using npx connection wrapper to pass headers)</li>
+                <li><strong>Type:</strong> <code>command</code></li>
                 <li><strong>Command:</strong> <code>npx -y @modelcontextprotocol/sdk connect https://rock-mcp.favor.church/mcp</code></li>
               </ul>
             </li>
@@ -702,13 +699,13 @@ export function getLandingPageHtml(options: {
 
       <div id="tab-auth" class="tab-content">
         <div class="guide-text">
-          <p>All MCP endpoints are secured using JSON Web Tokens (JWT) linked to church member logins.</p>
-          <p><strong>Required Headers:</strong></p>
+          <p>All MCP endpoints use OAuth Protected Resource metadata and Auth0 authorization server discovery. Configure your client with the <code>/mcp</code> URL, then complete the Rock/Auth0 login flow when prompted.</p>
+          <p><strong>OAuth discovery:</strong></p>
           <ul>
-            <li><code>Authorization: Bearer &lt;token&gt;</code> - Valid JWT from the Favor login provider.</li>
-            <li><code>x-mcp-session-id</code> (Optional) - Consistent UUID for caching user context and discovery states.</li>
+            <li><code>/.well-known/oauth-protected-resource</code> advertises this MCP resource and supported scopes.</li>
+            <li><code>/.well-known/oauth-authorization-server</code> mirrors the Auth0 metadata used for login and token issuance.</li>
           </ul>
-          <p>Tokens must contain at least the <code>read</code> scope. To perform updates/writes via <code>/mcp/readwrite</code> or <code>/mcp</code>, the token must include the <code>write</code> scope, and the user must be authorized for the targeted entity.</p>
+          <p>Access tokens issued by the login flow must contain at least the <code>read</code> scope. To perform updates/writes via <code>/mcp/readwrite</code> or <code>/mcp</code>, the signed-in user also needs the <code>write</code> scope and Rock authorization for the targeted entity.</p>
         </div>
       </div>
     </section>
