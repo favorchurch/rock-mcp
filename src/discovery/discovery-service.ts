@@ -36,35 +36,49 @@ export interface FavorDiscoveryMap {
   warnings: string[];
 }
 
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
 export class DiscoveryService {
-  private inMemoryMap: FavorDiscoveryMap | null = null;
-  private inMemoryMapExpiresAt = 0;
+  private inMemoryMaps = new Map<string, CacheEntry<FavorDiscoveryMap>>();
 
   constructor(
     private rockClient: RockClient,
     private redis: Redis | null = null
   ) {}
 
-  private getRedisKey(): string {
+  private getCachePartition(ctx: OAuthRockContext): string {
+    const subject = ctx.oauth?.subject || 'anonymous';
+    return crypto.createHash('sha256').update(subject).digest('hex').slice(0, 24);
+  }
+
+  private getRedisKey(ctx: OAuthRockContext): string {
     const prefix = process.env.ROCK_MCP_REDIS_PREFIX || 'rock-mcp:prod:';
-    return `${prefix}discovery:v17.7`;
+    return `${prefix}discovery:v17.7:${this.getCachePartition(ctx)}`;
   }
 
   public async getMap(ctx: OAuthRockContext): Promise<FavorDiscoveryMap> {
+    const cachePartition = this.getCachePartition(ctx);
+
     // Check in-memory cache
-    if (this.inMemoryMap && Date.now() < this.inMemoryMapExpiresAt) {
-      return this.inMemoryMap;
+    const inMemoryEntry = this.inMemoryMaps.get(cachePartition);
+    if (inMemoryEntry && Date.now() < inMemoryEntry.expiresAt) {
+      return inMemoryEntry.value;
     }
 
     // Check Redis cache if available
-    const redisKey = this.getRedisKey();
+    const redisKey = this.getRedisKey(ctx);
     if (this.redis) {
       try {
         const cached = await this.redis.get(redisKey);
         if (cached) {
           const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
-          this.inMemoryMap = parsed;
-          this.inMemoryMapExpiresAt = Date.now() + 900000; // 15 min TTL
+          this.inMemoryMaps.set(cachePartition, {
+            value: parsed,
+            expiresAt: Date.now() + 900000, // 15 min TTL
+          });
           return parsed;
         }
       } catch {
@@ -77,8 +91,10 @@ export class DiscoveryService {
     
     // Save to cache
     const ttlSeconds = parseInt(process.env.ROCK_MCP_DISCOVERY_TTL_SECONDS || '900', 10);
-    this.inMemoryMap = map;
-    this.inMemoryMapExpiresAt = Date.now() + ttlSeconds * 1000;
+    this.inMemoryMaps.set(cachePartition, {
+      value: map,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
 
     if (this.redis) {
       try {
@@ -92,11 +108,10 @@ export class DiscoveryService {
   }
 
   public async refresh(ctx: OAuthRockContext): Promise<void> {
-    this.inMemoryMap = null;
-    this.inMemoryMapExpiresAt = 0;
+    this.inMemoryMaps.delete(this.getCachePartition(ctx));
     if (this.redis) {
       try {
-        await this.redis.del(this.getRedisKey());
+        await this.redis.del(this.getRedisKey(ctx));
       } catch {
         // Ignore redis del failure
       }
