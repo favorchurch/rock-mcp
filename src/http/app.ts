@@ -1,8 +1,22 @@
-import express from 'express';
+import express, { Express } from 'express';
 import cors from 'cors';
-import { createAuthMiddleware, OAuthRockContext } from './oauth.js';
+import type { OAuthTokenVerifier } from '@modelcontextprotocol/sdk/server/auth/provider.js';
+import {
+  Auth0OAuthConfig,
+  Auth0OAuthMetadata,
+  Auth0OAuthTokenVerifier,
+  createOAuthContextAdapterMiddleware,
+  fetchAuth0OAuthMetadata,
+  getOAuthProtectedResourceMetadataUrl,
+  loadAuth0Config,
+  mcpAuthMetadataRouter,
+  OAuthEnv,
+  OAuthRockContext,
+  requireBearerAuth,
+} from './oauth.js';
 import { resolveMode, ScopeError } from '../mcp/modes.js';
-import { RockClientImpl } from '../rock/client.js';
+import { RockClient, RockClientConfig, RockClientImpl } from '../rock/client.js';
+import { ApiKeyStrategy, UserJwtStrategy } from '../rock/auth-strategy.js';
 import { RockUserResolver } from '../auth/rock-user-resolver.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -16,21 +30,58 @@ import { getLandingPageHtml } from './landing-page.js';
 import path from 'path';
 import fs from 'fs';
 
-export function createApp() {
+export interface CreateAppOptions {
+  env?: OAuthEnv;
+  oauthConfig?: Auth0OAuthConfig;
+  oauthMetadata?: Auth0OAuthMetadata;
+  verifier?: OAuthTokenVerifier;
+  fetchFn?: (url: URL) => Promise<Response>;
+  rockClientFactory?: (config: RockClientConfig) => RockClient;
+}
+
+export async function createApp(options: CreateAppOptions = {}): Promise<Express> {
+  const env = options.env || process.env;
+  const oauthConfig = options.oauthConfig || loadAuth0Config(env);
+  const oauthMetadata = options.oauthMetadata || await fetchAuth0OAuthMetadata({
+    config: oauthConfig,
+    fetchFn: options.fetchFn,
+  });
+  const verifier = options.verifier || new Auth0OAuthTokenVerifier(oauthConfig);
+  const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(oauthConfig.resourceServerUrl);
+  const createRockClient = options.rockClientFactory || ((config: RockClientConfig) => new RockClientImpl(config));
+
   const app = express();
-  app.use(cors());
+  app.use(cors({
+    allowedHeaders: ['Authorization', 'Content-Type', 'mcp-protocol-version', 'Mcp-Session-Id'],
+    exposedHeaders: ['WWW-Authenticate', 'Mcp-Session-Id'],
+  }));
   app.use(express.json());
+  app.use(mcpAuthMetadataRouter({
+    oauthMetadata,
+    resourceServerUrl: oauthConfig.resourceServerUrl,
+    scopesSupported: ['read', 'write'],
+    resourceName: 'Rock MCP',
+  }));
 
   // Configure Rock Client and discovery service
-  const rockClient = new RockClientImpl({
-    baseUrl: process.env.ROCK_PUBLIC_URL || process.env.ROCK_API_URL || '',
-    apiKey: process.env.ROCK_API_KEY || '',
+  const rockBaseUrl = env.ROCK_PUBLIC_URL || env.ROCK_API_URL || '';
+  const rockClient = createRockClient({
+    baseUrl: rockBaseUrl,
+    credentialStrategy: new UserJwtStrategy(),
   });
+
+  const adminApiKey = env.ROCK_API_KEY?.trim();
+  const adminClient = adminApiKey
+    ? createRockClient({
+        baseUrl: rockBaseUrl,
+        credentialStrategy: new ApiKeyStrategy(adminApiKey),
+      })
+    : undefined;
 
   // Initialize Redis and select appropriate stores
   const redis = createRedisClient();
   const discoveryService = new DiscoveryService(rockClient, redis);
-  const rockUserResolver = new RockUserResolver(rockClient);
+  const rockUserResolver = new RockUserResolver(rockClient, adminClient);
   const datasetStore: DatasetStore = redis
     ? new RedisDatasetStore(redis)
     : new InMemoryDatasetStore();
@@ -42,7 +93,14 @@ export function createApp() {
     console.log('[Rock MCP] Using in-memory cache (Redis not configured)');
   }
 
-  const authMiddleware = createAuthMiddleware();
+  const authMiddleware = [
+    requireBearerAuth({
+      verifier,
+      requiredScopes: ['read'],
+      resourceMetadataUrl,
+    }),
+    createOAuthContextAdapterMiddleware(),
+  ];
 
   const handleMcpRequest = (endpointKind: 'readonly' | 'readwrite' | 'mcp') => {
     return async (req: any, res: any) => {
@@ -137,9 +195,9 @@ export function createApp() {
     };
   };
 
-  app.post('/mcp/readonly', authMiddleware, handleMcpRequest('readonly'));
-  app.post('/mcp/readwrite', authMiddleware, handleMcpRequest('readwrite'));
-  app.post('/mcp', authMiddleware, handleMcpRequest('mcp'));
+  app.post('/mcp/readonly', ...authMiddleware, handleMcpRequest('readonly'));
+  app.post('/mcp/readwrite', ...authMiddleware, handleMcpRequest('readwrite'));
+  app.post('/mcp', ...authMiddleware, handleMcpRequest('mcp'));
 
   app.get('/', (_req: any, res: any) => {
     const redisConfigured = !!redis;
