@@ -46,7 +46,9 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Express
     config: oauthConfig,
     fetchFn: options.fetchFn,
   });
-  const verifier = options.verifier || new Auth0OAuthTokenVerifier(oauthConfig);
+  const verifier = options.verifier || new Auth0OAuthTokenVerifier(oauthConfig, {
+    jwksUri: oauthMetadata.jwks_uri,
+  });
   const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(oauthConfig.resourceServerUrl);
   const createRockClient = options.rockClientFactory || ((config: RockClientConfig) => new RockClientImpl(config));
 
