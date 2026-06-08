@@ -21,6 +21,8 @@ const isStdio = process.argv.includes('--stdio');
 if (isStdio) {
   console.error('Starting Rock MCP Server in stdio mode...');
 
+  // Stdio is a local dev/server-to-server entrypoint, so it intentionally
+  // keeps API-key credentials instead of requiring a per-user OAuth token.
   const rockClient = new RockClientImpl({
     baseUrl: process.env.ROCK_PUBLIC_URL || process.env.ROCK_API_URL || '',
     apiKey: process.env.ROCK_API_KEY || '',
@@ -103,7 +105,7 @@ if (isStdio) {
     process.exit(1);
   });
 } else {
-  const app = createApp();
+  const app = await createApp();
   const port = process.env.PORT || 8787;
 
   app.listen(port, () => {

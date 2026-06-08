@@ -97,6 +97,41 @@ describe('DiscoveryService', () => {
     expect(mockClient.post).not.toHaveBeenCalled();
   });
 
+  it('should partition discovery cache by OAuth subject', async () => {
+    const ctxA = {
+      oauth: { subject: 'auth0|user-a' },
+    } as OAuthRockContext;
+    const ctxB = {
+      oauth: { subject: 'auth0|user-b' },
+    } as OAuthRockContext;
+
+    mockClient.get = vi.fn().mockResolvedValue({ Version: '17.7' } as any);
+    mockClient.post = vi.fn().mockImplementation(async (ctx: OAuthRockContext, path) => {
+      if (path.includes('/campuses/search')) {
+        return [{
+          Id: ctx.oauth.subject === 'auth0|user-a' ? 1 : 2,
+          Name: ctx.oauth.subject === 'auth0|user-a' ? 'User A Campus' : 'User B Campus',
+          Guid: ctx.oauth.subject === 'auth0|user-a' ? 'g-user-a' : 'g-user-b',
+        }];
+      }
+      return [];
+    });
+
+    const mapA1 = await service.getMap(ctxA);
+    const mapB = await service.getMap(ctxB);
+
+    expect(mapA1.campuses[0].name).toBe('User A Campus');
+    expect(mapB.campuses[0].name).toBe('User B Campus');
+    expect(mockClient.post).toHaveBeenCalledWith(ctxA, expect.stringContaining('/campuses/search'), expect.anything());
+    expect(mockClient.post).toHaveBeenCalledWith(ctxB, expect.stringContaining('/campuses/search'), expect.anything());
+
+    vi.mocked(mockClient.post).mockClear();
+
+    const mapA2 = await service.getMap(ctxA);
+    expect(mapA2.campuses[0].name).toBe('User A Campus');
+    expect(mockClient.post).not.toHaveBeenCalled();
+  });
+
   it('should refresh discovery and query Rock again', async () => {
     mockClient.get = vi.fn().mockResolvedValue({ Version: '17.7' } as any);
     mockClient.post = vi.fn().mockResolvedValue([]);

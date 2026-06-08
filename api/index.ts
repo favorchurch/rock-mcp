@@ -1,5 +1,5 @@
 import { createApp } from '../src/http/app.js';
 
-const app = createApp();
+const app = await createApp();
 
 export default app;

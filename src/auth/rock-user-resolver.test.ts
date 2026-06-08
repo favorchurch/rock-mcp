@@ -8,17 +8,23 @@ import { OAuthRockContext } from '../http/oauth.js';
 
 describe('RockUserResolver', () => {
   let mockClient: RockClient;
+  let mockAdminClient: RockClient;
   let resolver: RockUserResolver;
   const mockCtx = {} as OAuthRockContext;
 
-  beforeEach(() => {
-    mockClient = {
+  function createMockClient(): RockClient {
+    return {
       get: vi.fn(),
       post: vi.fn(),
       put: vi.fn(),
       patch: vi.fn(),
       delete: vi.fn(),
     };
+  }
+
+  beforeEach(() => {
+    mockClient = createMockClient();
+    mockAdminClient = createMockClient();
     resolver = new RockUserResolver(mockClient);
   });
 
@@ -126,5 +132,69 @@ describe('RockUserResolver', () => {
 
     expect(result.isRsrAdmin).toBe(true);
     expect(mockClient.get).toHaveBeenCalled();
+  });
+
+  it('uses the optional admin client only for RSR admin lookup', async () => {
+    resolver = new RockUserResolver(mockClient, mockAdminClient);
+    const oauth = {
+      subject: 'user-admin-client',
+      email: 'admin-client@example.com',
+      accessTokenHash: 'hash',
+    };
+
+    mockClient.post = vi.fn().mockImplementation(async (_ctx, path, _body: any) => {
+      if (path.includes('/people/search')) {
+        return [{ Id: 3, PrimaryAliasId: 30, Guid: '550e8400-e29b-41d4-a716-446655440003' }];
+      }
+      return [];
+    });
+
+    mockAdminClient.post = vi.fn().mockImplementation(async (_ctx, path, _body: any) => {
+      if (path.includes('/groups/search')) {
+        return [{ Id: 99, Name: 'RSR - Rock Administration' }];
+      }
+      if (path.includes('/groupmembers/search')) {
+        return [{ Id: 1003, PersonId: 3, GroupId: 99, GroupMemberStatus: 1 }];
+      }
+      return [];
+    });
+
+    const result = await resolver.resolve(mockCtx, oauth);
+
+    expect(result.personId).toBe(3);
+    expect(result.isRsrAdmin).toBe(true);
+    expect(mockClient.post).toHaveBeenCalledWith(mockCtx, '/api/v2/models/people/search', expect.any(Object));
+    expect(mockClient.post).not.toHaveBeenCalledWith(mockCtx, '/api/v2/models/groups/search', expect.any(Object));
+    expect(mockClient.post).not.toHaveBeenCalledWith(mockCtx, '/api/v2/models/groupmembers/search', expect.any(Object));
+    expect(mockAdminClient.post).toHaveBeenCalledWith(mockCtx, '/api/v2/models/groups/search', expect.any(Object));
+    expect(mockAdminClient.post).toHaveBeenCalledWith(mockCtx, '/api/v2/models/groupmembers/search', expect.any(Object));
+  });
+
+  it('fails closed when the optional admin client cannot check RSR membership', async () => {
+    resolver = new RockUserResolver(mockClient, mockAdminClient);
+    const oauth = {
+      subject: 'user-admin-client-failure',
+      email: 'admin-client-failure@example.com',
+      accessTokenHash: 'hash',
+    };
+
+    mockClient.post = vi.fn().mockImplementation(async (_ctx, path, _body: any) => {
+      if (path.includes('/people/search')) {
+        return [{ Id: 4, PrimaryAliasId: 40, Guid: '550e8400-e29b-41d4-a716-446655440004' }];
+      }
+      return [];
+    });
+
+    mockAdminClient.post = vi.fn().mockRejectedValue(new Error('Admin lookup unavailable'));
+    mockAdminClient.get = vi.fn().mockRejectedValue(new Error('Admin fallback unavailable'));
+
+    const result = await resolver.resolve(mockCtx, oauth);
+
+    expect(result.personId).toBe(4);
+    expect(result.isRsrAdmin).toBe(false);
+    expect(mockAdminClient.post).toHaveBeenCalled();
+    expect(mockAdminClient.get).toHaveBeenCalled();
+    expect(mockClient.post).not.toHaveBeenCalledWith(mockCtx, '/api/v2/models/groups/search', expect.any(Object));
+    expect(mockClient.post).not.toHaveBeenCalledWith(mockCtx, '/api/v2/models/groupmembers/search', expect.any(Object));
   });
 });

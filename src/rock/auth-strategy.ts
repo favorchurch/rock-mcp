@@ -39,10 +39,11 @@ export class ApiKeyStrategy implements RockCredentialStrategy {
 
 export class UserJwtStrategy implements RockCredentialStrategy {
   public async getHeaders(ctx: OAuthRockContext, _request: RockRequestSpec): Promise<Record<string, string>> {
-    // Assuming the user context contains a native Rock JWT in ctx.oauth.rockUserJwt if configured.
-    // In v1, we default to the OAuth access token if it is natively accepted by Rock.
-    // We expect the user token to be configured or passed in the context.
-    const token = (ctx as any).rockUserJwt || ctx.oauth.accessTokenHash; // fallback or placeholder
+    const token = ctx.rockUserToken?.trim();
+    if (!token) {
+      throw new Error('Missing Rock user token for Bearer authentication');
+    }
+
     return {
       'Authorization': `Bearer ${token}`,
     };
