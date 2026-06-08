@@ -5,9 +5,9 @@
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "dev:stdio": "tsx src/server.ts --stdio",
-    "build": "next build && npm run build:apps",
+    "build": "npm run build:apps && next build --webpack",
     "build:apps": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "next start",
