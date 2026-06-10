@@ -30,10 +30,15 @@ async function build() {
   const jsBundle = result.outputFiles[0].text;
 
   let html = fs.readFileSync(htmlTemplate, 'utf8');
-  html = html.replace(
+  const patched = html.replace(
     /<script\s+type="module"\s+src="\.\/report-viewer\.ts"><\/script>/,
     `<script>${jsBundle}</script>`
   );
+  if (patched === html) {
+    console.error('ERROR: HTML injection failed — <script> tag not found in template');
+    process.exit(1);
+  }
+  html = patched;
 
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outFile, html, 'utf8');
