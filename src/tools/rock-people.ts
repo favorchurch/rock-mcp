@@ -156,6 +156,33 @@ function getDiscoveryService(ctx: OAuthRockContext): any {
   return (ctx as any).discoveryService;
 }
 
+/**
+ * Search people by name with v2 LINQ, falling back to v1 OData.
+ * Handles full names ("First Last") on the v1 path by splitting into
+ * first/last tokens — v1 has no string-concatenation filter, so an exact
+ * match on the full string would never succeed there.
+ */
+async function searchPeopleByName(client: RockClient, ctx: OAuthRockContext, search: string): Promise<any[]> {
+  try {
+    const quoted = quoteLinqString(search);
+    return await client.post(ctx, '/api/v2/models/people/search', {
+      Where: `NickName == ${quoted} || LastName == ${quoted} || (NickName + " " + LastName) == ${quoted}`,
+    });
+  } catch {
+    const parts = search.trim().split(/\s+/);
+    let odataFilter: string;
+    if (parts.length >= 2) {
+      const first = parts[0];
+      const last = parts.slice(1).join(' ');
+      odataFilter =
+        `((NickName eq ${quoteODataString(first)}) or (FirstName eq ${quoteODataString(first)})) and (LastName eq ${quoteODataString(last)})`;
+    } else {
+      odataFilter = `(NickName eq ${quoteODataString(search)}) or (LastName eq ${quoteODataString(search)})`;
+    }
+    return await client.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}`);
+  }
+}
+
 async function resolvePersonId(client: RockClient, ctx: OAuthRockContext, person: { id?: number; guid?: string; search?: string }): Promise<number | null> {
   if (person.id) return person.id;
   if (person.guid) {
@@ -169,14 +196,7 @@ async function resolvePersonId(client: RockClient, ctx: OAuthRockContext, person
     if (results && results.length > 0) return results[0].Id;
   }
   if (person.search) {
-    let results: any[] = [];
-    try {
-      const quoted = quoteLinqString(person.search);
-      results = await client.post(ctx, '/api/v2/models/people/search', { Where: `NickName == ${quoted} || LastName == ${quoted} || (NickName + " " + LastName) == ${quoted}` });
-    } catch {
-      const odataFilter = `(NickName eq ${quoteODataString(person.search)}) or (LastName eq ${quoteODataString(person.search)})`;
-      results = await client.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}`);
-    }
+    const results = await searchPeopleByName(client, ctx, person.search);
     if (results && results.length > 0) return results[0].Id;
   }
   return null;
@@ -911,16 +931,7 @@ export const rockPeopleTool: GatewayTool = {
             match = results[0];
           }
         } else if (person.search) {
-          let results: any[] = [];
-          try {
-            const quoted = quoteLinqString(person.search);
-            results = await rockClient.post(ctx, '/api/v2/models/people/search', {
-              Where: `NickName == ${quoted} || LastName == ${quoted} || (NickName + " " + LastName) == ${quoted}`,
-            });
-          } catch (_err) {
-            const odataFilter = `(NickName eq ${quoteODataString(person.search)}) or (LastName eq ${quoteODataString(person.search)})`;
-            results = await rockClient.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}`);
-          }
+          const results = await searchPeopleByName(rockClient, ctx, person.search);
           if (results && results.length > 0) {
             match = results[0];
           }
@@ -929,7 +940,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!match) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1003,7 +1014,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1257,7 +1268,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1371,7 +1382,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1485,7 +1496,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1508,7 +1519,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1530,7 +1541,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1553,7 +1564,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1575,7 +1586,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 
@@ -1613,7 +1624,7 @@ export const rockPeopleTool: GatewayTool = {
         if (!id) {
           return formatResponse(parsed.action, ctx, null, {
             code: 'NOT_FOUND',
-            message: 'Person not found.',
+            message: "Person not found. Exact name match failed — try { action: 'find', query: '<partial name>' } for a fuzzy search.",
           });
         }
 

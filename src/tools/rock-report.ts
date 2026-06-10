@@ -21,6 +21,26 @@ function entityNameToRoute(entityClassName: string): string {
 }
 
 /**
+ * Privacy-safe projection for Person rows returned by reports. Raw person
+ * records carry 100+ columns including PII (email, birthdate, notes); default
+ * report output must follow the same privacy rules as the people tools.
+ */
+function projectPersonRow(row: any): any {
+  return {
+    Id: row.Id,
+    Guid: row.Guid,
+    IdKey: row.IdKey,
+    FullName: row.FullName || `${row.NickName || row.FirstName || ''} ${row.LastName || ''}`.trim(),
+    Gender: row.Gender,
+    AgeClassification: row.AgeClassification,
+    ConnectionStatusValueId: row.ConnectionStatusValueId,
+    RecordStatusValueId: row.RecordStatusValueId,
+    PrimaryCampusId: row.PrimaryCampusId,
+    CreatedDateTime: row.CreatedDateTime,
+  };
+}
+
+/**
  * Execute a report's underlying DataView: GET /api/{EntityPlural}/DataView/{id}.
  * Throws if the report has no DataView or the entity type cannot be resolved.
  */
@@ -36,9 +56,14 @@ async function runReportViaDataView(
     throw new Error('Report has no DataViewId/EntityTypeId.');
   }
   const entityType = await rockClient.get<any>(ctx, `/api/EntityTypes/${entityTypeId}`);
-  const route = entityNameToRoute(entityType?.Name || '');
-  const rows = await rockClient.get<any[]>(ctx, `/api/${route}/DataView/${dataViewId}?$top=${limit}`);
-  return rows || [];
+  const entityName = entityType?.Name || '';
+  const route = entityNameToRoute(entityName);
+  let rows = await rockClient.get<any[]>(ctx, `/api/${route}/DataView/${dataViewId}?$top=${limit}`);
+  rows = rows || [];
+  if (entityName.endsWith('.Person')) {
+    rows = rows.map(projectPersonRow);
+  }
+  return rows;
 }
 
 const rockReportSchema = z.discriminatedUnion('action', [

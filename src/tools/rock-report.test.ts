@@ -40,7 +40,7 @@ describe('rock_report tool', () => {
         return { Id: 15, Name: 'Rock.Model.Person' };
       }
       if (path.startsWith('/api/People/DataView/4')) {
-        return [{ Id: 7228, FirstName: 'Sam' }];
+        return [{ Id: 7228, FirstName: 'Sam', LastName: 'Lee', Email: 'sam@example.com', BirthDate: '2000-01-01' }];
       }
       throw new Error(`Unexpected path ${path}`);
     });
@@ -51,6 +51,11 @@ describe('rock_report tool', () => {
     expect(response.ok).toBe(true);
     expect(response.result.rowCount).toBe(1);
     expect(mockClient.get).toHaveBeenCalledWith(mockCtx, '/api/People/DataView/4?$top=10');
+
+    // Person rows must be privacy-projected: no email/birthdate in report output
+    expect(response.result.previewRows[0].FullName).toBe('Sam Lee');
+    expect(response.result.previewRows[0].Email).toBeUndefined();
+    expect(response.result.previewRows[0].BirthDate).toBeUndefined();
   });
 
   it('should run report and return preview & datasetId', async () => {
