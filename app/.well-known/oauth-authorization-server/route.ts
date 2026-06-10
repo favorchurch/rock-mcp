@@ -1,6 +1,6 @@
 import { getAppContext } from '@/src/http/app-context';
 import { jsonCors, MCP_CORS_HEADERS } from '@/src/http/oauth-validate';
-import { overrideRegistrationEndpoint } from '@/src/http/register-route';
+import { localizeOAuthMetadata } from '@/src/http/register-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(): Promise<Response> {
   try {
     const app = await getAppContext();
-    const metadata = overrideRegistrationEndpoint(app.oauthMetadata, app.oauthConfig.resourceServerUrl);
+    const metadata = localizeOAuthMetadata(app.oauthMetadata, app.oauthConfig.resourceServerUrl);
     return jsonCors(metadata);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'OAuth metadata unavailable';

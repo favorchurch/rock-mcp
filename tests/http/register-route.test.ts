@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { handleRegisterPost, isAllowedRedirectUri, overrideRegistrationEndpoint } from '../../src/http/register-route.js';
+import { handleRegisterPost, isAllowedRedirectUri, localizeOAuthMetadata } from '../../src/http/register-route.js';
 import { resetAppContextForTests, CreateAppContextOptions } from '../../src/http/app-context.js';
 import type { Auth0OAuthConfig, Auth0OAuthMetadata } from '../../src/http/oauth.js';
 import type { Auth0ManagementClient } from '../../src/http/auth0-management.js';
@@ -111,21 +111,26 @@ describe('isAllowedRedirectUri', () => {
   });
 });
 
-describe('overrideRegistrationEndpoint', () => {
+describe('localizeOAuthMetadata', () => {
   it('sets registration_endpoint to resource server /oauth/register', () => {
-    const result = overrideRegistrationEndpoint(oauthMetadata, new URL('https://mcp.example.com/'));
+    const result = localizeOAuthMetadata(oauthMetadata, new URL('https://mcp.example.com/'));
     expect(result.registration_endpoint).toBe('https://mcp.example.com/oauth/register');
   });
 
   it('avoids double slash when resourceServerUrl has trailing slash', () => {
-    const result = overrideRegistrationEndpoint(oauthMetadata, new URL('https://mcp.example.com/'));
+    const result = localizeOAuthMetadata(oauthMetadata, new URL('https://mcp.example.com/'));
     expect(result.registration_endpoint).not.toContain('//oauth');
   });
 
-  it('preserves other metadata fields', () => {
-    const result = overrideRegistrationEndpoint(oauthMetadata, new URL('https://mcp.example.com/'));
-    expect(result.issuer).toBe(oauthMetadata.issuer);
+  it('rewrites issuer to this server origin (RFC 8414 §3.3) with no trailing slash', () => {
+    const result = localizeOAuthMetadata(oauthMetadata, new URL('https://mcp.example.com/'));
+    expect(result.issuer).toBe('https://mcp.example.com');
+  });
+
+  it('leaves Auth0 token-issuing endpoints untouched', () => {
+    const result = localizeOAuthMetadata(oauthMetadata, new URL('https://mcp.example.com/'));
     expect(result.authorization_endpoint).toBe(oauthMetadata.authorization_endpoint);
+    expect(result.token_endpoint).toBe(oauthMetadata.token_endpoint);
     expect(result.jwks_uri).toBe(oauthMetadata.jwks_uri);
   });
 });

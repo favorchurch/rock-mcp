@@ -39,16 +39,26 @@ function isLoopbackHost(hostname: string): boolean {
 }
 
 /**
- * Overrides the registration_endpoint in Auth0 OAuth metadata
- * to point to our own /oauth/register endpoint.
+ * Rewrites Auth0 OAuth metadata so this server presents itself as the
+ * authorization server to MCP clients:
+ * - `registration_endpoint` points at our single-client /oauth/register proxy
+ *   (Auth0's own DCR endpoint is capped — `403 too_many_entities`).
+ * - `issuer` is set to this server's origin so the metadata satisfies
+ *   RFC 8414 §3.3 (issuer MUST equal the identifier the client used to fetch
+ *   it; the Protected Resource Metadata now names this server as the AS).
+ *
+ * Auth0 still issues and signs the tokens — `authorization_endpoint`,
+ * `token_endpoint`, and `jwks_uri` are left pointing at Auth0, and token
+ * verification (src/http/oauth.ts) keeps validating against the Auth0 issuer.
  */
-export function overrideRegistrationEndpoint(
+export function localizeOAuthMetadata(
   metadata: Auth0OAuthMetadata,
   resourceServerUrl: URL
 ): Auth0OAuthMetadata {
   const base = resourceServerUrl.href.replace(/\/$/, '');
   return {
     ...metadata,
+    issuer: resourceServerUrl.origin,
     registration_endpoint: `${base}/oauth/register`,
   };
 }
