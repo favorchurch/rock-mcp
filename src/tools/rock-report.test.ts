@@ -5,6 +5,8 @@ import { rockReportTool } from './rock-report.js';
 import { OAuthRockContext } from '../http/oauth.js';
 // @ts-ignore
 import { InMemoryDatasetStore } from './dataset-store.js';
+// @ts-ignore
+import { clearDefinedValueCache } from '../rock/defined-values.js';
 
 describe('rock_report tool', () => {
   let mockClient: any;
@@ -12,6 +14,9 @@ describe('rock_report tool', () => {
   let datasetStore: any;
 
   beforeEach(() => {
+    // Clear DefinedValue cache before each test
+    clearDefinedValueCache();
+
     mockClient = {
       get: vi.fn(),
       post: vi.fn(),
@@ -104,5 +109,49 @@ describe('rock_report tool', () => {
     const summaryResponse = JSON.parse(resultSummary.content[0].text!);
     expect(summaryResponse.ok).toBe(true);
     expect(summaryResponse.result.rows).toHaveLength(2);
+  });
+
+  it('includes resolved ConnectionStatus and RecordStatus names in DataView rows', async () => {
+    mockClient.get = vi.fn().mockImplementation(async (_ctx, path) => {
+      if (path === '/api/Reports/42') {
+        return { Id: 42, Name: 'People Report', DataViewId: 4, EntityTypeId: 15 };
+      }
+      if (path === '/api/EntityTypes/15') {
+        return { Id: 15, Name: 'Rock.Model.Person' };
+      }
+      if (path.startsWith('/api/People/DataView/4')) {
+        return [
+          {
+            Id: 7228,
+            FirstName: 'Sam',
+            LastName: 'Lee',
+            ConnectionStatusValueId: 67,
+            RecordStatusValueId: 3,
+          },
+        ];
+      }
+      if (path.includes('Connection Status')) {
+        return [
+          { Id: 67, Value: 'Member' },
+          { Id: 68, Value: 'Visitor' },
+        ];
+      }
+      if (path.includes('Record Status')) {
+        return [
+          { Id: 3, Value: 'Active' },
+          { Id: 4, Value: 'Inactive' },
+        ];
+      }
+      throw new Error(`Unexpected path ${path}`);
+    });
+
+    const result = await rockReportTool.handle({ action: 'run', reportId: 42, limit: 10 }, null, mockCtx);
+    const response = JSON.parse(result.content[0].text!);
+
+    expect(response.ok).toBe(true);
+    expect(response.result.previewRows[0].ConnectionStatusValueId).toBe(67);
+    expect(response.result.previewRows[0].ConnectionStatus).toBe('Member');
+    expect(response.result.previewRows[0].RecordStatusValueId).toBe(3);
+    expect(response.result.previewRows[0].RecordStatus).toBe('Active');
   });
 });

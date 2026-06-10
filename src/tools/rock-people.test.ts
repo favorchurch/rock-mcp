@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rockPeopleTool } from './rock-people.js';
 // @ts-ignore
 import { OAuthRockContext } from '../http/oauth.js';
+// @ts-ignore
+import { clearDefinedValueCache } from '../rock/defined-values.js';
 
 describe('rock_people tool', () => {
   let mockClient: any;
@@ -10,6 +12,9 @@ describe('rock_people tool', () => {
   let mockDiscoveryService: any;
 
   beforeEach(() => {
+    // Clear DefinedValue cache before each test
+    clearDefinedValueCache();
+
     mockClient = {
       get: vi.fn(),
       post: vi.fn(),
@@ -916,6 +921,51 @@ describe('rock_people tool', () => {
         mockCtx,
         expect.stringContaining('PrimaryCampusId')
       );
+    });
+
+    it('resolves ConnectionStatusValueId to name in v1 fallback rows', async () => {
+      mockClient.post.mockRejectedValue(new Error('v2 unavailable'));
+      // GET calls happen in order:
+      // 1. Count query (returns array, .length gives count)
+      // 2. Rows query (returns actual rows)
+      // 3. DefinedValues query (returns the map)
+      mockClient.get
+        .mockResolvedValueOnce([
+          {
+            Id: 400,
+            Guid: 'guid-400',
+            NickName: 'Chris',
+            LastName: 'Martin',
+            PrimaryCampusId: 3,
+            ConnectionStatusValueId: 67,
+          },
+        ]) // Count query (OData), returns 1 row
+        .mockResolvedValueOnce([
+          {
+            Id: 400,
+            Guid: 'guid-400',
+            NickName: 'Chris',
+            LastName: 'Martin',
+            PrimaryCampusId: 3,
+            ConnectionStatusValueId: 67,
+            // Note: ConnectionStatusValue is null on v1 fallback
+          },
+        ]) // Rows query (OData)
+        .mockResolvedValueOnce([
+          { Id: 67, Value: 'Member' },
+          { Id: 68, Value: 'Visitor' },
+        ]); // DefinedValues query
+
+      const result = await rockPeopleTool.handle(
+        { action: 'filter', campusId: 3 },
+        null,
+        mockCtx
+      );
+      const response = JSON.parse(result.content[0].text!);
+
+      expect(response.ok).toBe(true);
+      expect(response.result.results).toHaveLength(1);
+      expect(response.result.results[0].connectionStatus).toBe('Member');
     });
 
     it('accepts lenient person references (bare string, numeric, stringified JSON)', async () => {

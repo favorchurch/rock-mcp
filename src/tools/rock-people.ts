@@ -7,6 +7,7 @@ import { RockClient } from '../rock/client.js';
 import { quoteLinqString, quoteODataString, assertValidGuid } from '../rock/query.js';
 import { AuditLogger } from '../auth/audit.js';
 import { authorizeWrite } from '../auth/authorization.js';
+import { getDefinedValueMap } from '../rock/defined-values.js';
 
 // Named constants
 const FAMILY_GROUP_TYPE_NAME = 'Family';
@@ -881,12 +882,15 @@ export const rockPeopleTool: GatewayTool = {
           warning = warning ? `${warning}; fell back to REST v1 for rows` : 'Fell back to REST v1 for rows';
         }
 
+        // Fetch DefinedValue map for ConnectionStatus to resolve IDs to names
+        const connectionStatusMap = await getDefinedValueMap(rockClient, ctx, 'Connection Status');
+
         const results = (rows || []).map((p: any) => ({
           id: p.Id,
           guid: p.Guid,
           name: `${p.NickName || p.FirstName || ''} ${p.LastName || ''}`.trim(),
           campusId: p.PrimaryCampusId || p.CampusId,
-          connectionStatus: p.ConnectionStatusValue,
+          connectionStatus: p.ConnectionStatusValue || (p.ConnectionStatusValueId ? connectionStatusMap.get(p.ConnectionStatusValueId) : undefined),
         }));
 
         return formatResponse(parsed.action, ctx, {

@@ -7,6 +7,7 @@ import { formatResponse } from './formatter.js';
 import { RockClient } from '../rock/client.js';
 import { StoredDataset } from './dataset-store.js';
 import { REPORT_VIEWER_URI } from '../mcp/apps.js';
+import { getDefinedValueMap } from '../rock/defined-values.js';
 
 /**
  * Map a Rock entity class name (e.g. 'Rock.Model.Person') to its REST v1
@@ -24,9 +25,17 @@ function entityNameToRoute(entityClassName: string): string {
  * Privacy-safe projection for Person rows returned by reports. Raw person
  * records carry 100+ columns including PII (email, birthdate, notes); default
  * report output must follow the same privacy rules as the people tools.
+ *
+ * @param row Raw person row from the report
+ * @param connectionStatusMap Optional Map of Connection Status IDs to names
+ * @param recordStatusMap Optional Map of Record Status IDs to names
  */
-function projectPersonRow(row: any): any {
-  return {
+function projectPersonRow(
+  row: any,
+  connectionStatusMap?: Map<number, string>,
+  recordStatusMap?: Map<number, string>
+): any {
+  const result: any = {
     Id: row.Id,
     Guid: row.Guid,
     IdKey: row.IdKey,
@@ -38,6 +47,23 @@ function projectPersonRow(row: any): any {
     PrimaryCampusId: row.PrimaryCampusId,
     CreatedDateTime: row.CreatedDateTime,
   };
+
+  // Add resolved names if available
+  if (connectionStatusMap && row.ConnectionStatusValueId) {
+    const resolved = connectionStatusMap.get(row.ConnectionStatusValueId);
+    if (resolved) {
+      result.ConnectionStatus = resolved;
+    }
+  }
+
+  if (recordStatusMap && row.RecordStatusValueId) {
+    const resolved = recordStatusMap.get(row.RecordStatusValueId);
+    if (resolved) {
+      result.RecordStatus = resolved;
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -61,7 +87,10 @@ async function runReportViaDataView(
   let rows = await rockClient.get<any[]>(ctx, `/api/${route}/DataView/${dataViewId}?$top=${limit}`);
   rows = rows || [];
   if (entityName.endsWith('.Person')) {
-    rows = rows.map(projectPersonRow);
+    // Fetch DefinedValue maps for resolving IDs to names
+    const connectionStatusMap = await getDefinedValueMap(rockClient, ctx, 'Connection Status');
+    const recordStatusMap = await getDefinedValueMap(rockClient, ctx, 'Record Status');
+    rows = rows.map((row) => projectPersonRow(row, connectionStatusMap, recordStatusMap));
   }
   return rows;
 }
