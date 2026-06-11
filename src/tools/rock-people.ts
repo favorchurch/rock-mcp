@@ -685,8 +685,20 @@ export const rockPeopleTool: GatewayTool = {
             Limit: limit,
           });
         } catch (_err) {
-          // Fall back to REST v1
-          const odataFilter = `(substringof(${quoteODataString(query)}, NickName) eq true) or (substringof(${quoteODataString(query)}, LastName) eq true)`;
+          // Fall back to REST v1. v1 has no string-concatenation filter, so a
+          // full-name query like "First Last" can never substring-match a single
+          // name field — split into first/last tokens instead (mirrors
+          // searchPeopleByName).
+          const parts = query.trim().split(/\s+/);
+          let odataFilter: string;
+          if (parts.length >= 2) {
+            const first = parts[0];
+            const last = parts.slice(1).join(' ');
+            odataFilter =
+              `((substringof(${quoteODataString(first)}, NickName) eq true) or (substringof(${quoteODataString(first)}, FirstName) eq true)) and (substringof(${quoteODataString(last)}, LastName) eq true)`;
+          } else {
+            odataFilter = `(substringof(${quoteODataString(query)}, NickName) eq true) or (substringof(${quoteODataString(query)}, LastName) eq true)`;
+          }
           results = await rockClient.get(ctx, `/api/People?$filter=${encodeURIComponent(odataFilter)}&$top=${limit}`);
         }
 

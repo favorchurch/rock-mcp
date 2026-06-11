@@ -50,6 +50,52 @@ describe('rock_people tool', () => {
     } as unknown as OAuthRockContext;
   });
 
+  describe('find action v1 fallback', () => {
+    it('splits a full-name query into first/last tokens', async () => {
+      mockClient.post.mockRejectedValue(new Error('401 Unauthorized'));
+      mockClient.get.mockResolvedValue([
+        { Id: 7, Guid: 'g-7', NickName: 'Rico', LastName: 'Tiongson' },
+      ]);
+
+      const result = await rockPeopleTool.handle(
+        { action: 'find', query: 'Rico Tiongson' },
+        null,
+        mockCtx
+      );
+
+      const response = JSON.parse(result.content[0].text!);
+      expect(response.ok).toBe(true);
+      expect(response.result).toEqual([{ id: 7, guid: 'g-7', name: 'Rico Tiongson' }]);
+
+      const url = decodeURIComponent(mockClient.get.mock.calls[0][1]);
+      expect(url).toContain(`substringof('Rico', NickName)`);
+      expect(url).toContain(`substringof('Rico', FirstName)`);
+      expect(url).toContain(`substringof('Tiongson', LastName)`);
+      expect(url).toContain(') and (');
+    });
+
+    it('keeps the single-field substring filter for one-token queries', async () => {
+      mockClient.post.mockRejectedValue(new Error('401 Unauthorized'));
+      mockClient.get.mockResolvedValue([
+        { Id: 8, Guid: 'g-8', NickName: 'Rico', LastName: 'Tiongson' },
+      ]);
+
+      const result = await rockPeopleTool.handle(
+        { action: 'find', query: 'Rico' },
+        null,
+        mockCtx
+      );
+
+      const response = JSON.parse(result.content[0].text!);
+      expect(response.ok).toBe(true);
+
+      const url = decodeURIComponent(mockClient.get.mock.calls[0][1]);
+      expect(url).toContain(`substringof('Rico', NickName)`);
+      expect(url).toContain(`substringof('Rico', LastName)`);
+      expect(url).not.toContain(') and (');
+    });
+  });
+
   it('should return a privacy-safe profile by default', async () => {
     mockClient.post.mockResolvedValue([
       {
