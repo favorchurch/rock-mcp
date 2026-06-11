@@ -181,6 +181,53 @@ describe('rock_people tool', () => {
     expect(response.result.ministryTeams[0].name).toBe('Group 2');
   });
 
+  it('classifies groups via v1 fallback without $expand=Group when v2 search fails', async () => {
+    // v2 groupmembers search is unavailable on this instance.
+    mockClient.post.mockRejectedValue(new Error('401 Unauthorized'));
+
+    const seenPaths: string[] = [];
+    mockClient.get.mockImplementation(async (_ctx: any, path: string) => {
+      seenPaths.push(path);
+      if (path.includes('/api/GroupMembers')) {
+        // v1 GroupMembers cannot expand Group — only GroupId is returned.
+        return [
+          { Id: 1, GroupId: 10, GroupRole: { Name: 'Leader' } },
+          { Id: 2, GroupId: 11, GroupRole: { Name: 'Member' } },
+        ];
+      }
+      if (path.includes('/api/Groups')) {
+        return [
+          { Id: 10, Name: 'Group 1', GroupTypeId: 10 },
+          { Id: 11, Name: 'Group 2', GroupTypeId: 11 },
+        ];
+      }
+      return [];
+    });
+
+    const result = await rockPeopleTool.handle(
+      { action: 'groups', person: { id: 123 } },
+      null,
+      mockCtx
+    );
+
+    const response = JSON.parse(result.content[0].text!);
+    expect(response.ok).toBe(true);
+    expect(response.result.warning).toBeUndefined();
+    expect(response.result.connectGroups).toHaveLength(1);
+    expect(response.result.connectGroups[0].name).toBe('Group 1');
+    expect(response.result.ministryTeams).toHaveLength(1);
+    expect(response.result.ministryTeams[0].name).toBe('Group 2');
+
+    // The GroupMembers query must NOT expand the invalid Group nav property
+    // (GroupRole expands fine; "Group" must not appear as an expand token).
+    const memberQuery = seenPaths.find((p) => p.includes('/api/GroupMembers'));
+    expect(memberQuery).toBeDefined();
+    const expandTokens = (new URL('http://x' + memberQuery).searchParams.get('$expand') ?? '').split(',');
+    expect(expandTokens).not.toContain('Group');
+    // Group details come from a separate /api/Groups lookup by id.
+    expect(seenPaths.some((p) => p.includes('/api/Groups') && p.includes('Id eq 10'))).toBe(true);
+  });
+
   it('should fetch family members', async () => {
     // First call: get family group type
     mockClient.post.mockResolvedValueOnce([{ Id: 20, Name: 'Family' }]);
@@ -216,6 +263,47 @@ describe('rock_people tool', () => {
     expect(response.ok).toBe(true);
     expect(response.result.familyMembers).toHaveLength(2);
     expect(response.result.familyMembers[0].name).toBe('Alex Santos');
+  });
+
+  it('fetches family via v1 fallback without $expand=Group or Group/ navigation filter', async () => {
+    // Every v2 search call is unavailable on this instance.
+    mockClient.post.mockRejectedValue(new Error('401 Unauthorized'));
+
+    const seenPaths: string[] = [];
+    mockClient.get.mockImplementation(async (_ctx: any, path: string) => {
+      seenPaths.push(path);
+      if (path.includes('/api/GroupTypes')) {
+        return [{ Id: 20, Name: 'Family' }];
+      }
+      if (path.includes('/api/GroupMembers') && path.includes('GroupId eq 200')) {
+        return [
+          { Id: 100, Person: { Id: 123, FirstName: 'Alex', LastName: 'Santos' }, GroupRole: { Name: 'Head of Household' } },
+          { Id: 101, Person: { Id: 124, FirstName: 'Sarah', LastName: 'Santos' }, GroupRole: { Name: 'Spouse' } },
+        ];
+      }
+      if (path.includes('/api/GroupMembers')) {
+        // person's memberships — only GroupId, no Group expand
+        return [{ Id: 100, GroupId: 200 }];
+      }
+      if (path.includes('/api/Groups')) {
+        return [{ Id: 200, GroupTypeId: 20 }];
+      }
+      return [];
+    });
+
+    const result = await rockPeopleTool.handle(
+      { action: 'family', person: { id: 123 } },
+      null,
+      mockCtx
+    );
+
+    const response = JSON.parse(result.content[0].text!);
+    expect(response.ok).toBe(true);
+    expect(response.result.familyMembers).toHaveLength(2);
+    expect(response.result.familyMembers[0].name).toBe('Alex Santos');
+
+    // No query may use the invalid Group nav property (expand or filter).
+    expect(seenPaths.every((p) => !p.includes('$expand=Group') && !p.includes('Group/GroupTypeId'))).toBe(true);
   });
 
   it('should get connection status', async () => {

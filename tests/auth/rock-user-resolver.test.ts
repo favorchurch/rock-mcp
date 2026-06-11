@@ -116,7 +116,10 @@ describe('RockUserResolver', () => {
         return [{ Id: 99, Name: 'RSR - Rock Administration' }];
       }
       if (path.includes('/api/GroupMembers')) {
-        expect(path).toContain("GroupMemberStatus eq 'Active'");
+        // GroupMemberStatus is an integer enum (1 = Active); the string form
+        // 'Active' silently matches nothing on this v1 OData instance.
+        expect(path).toContain('GroupMemberStatus eq 1');
+        expect(path).not.toContain("GroupMemberStatus eq 'Active'");
         return [{ Id: 1001, PersonId: 1, GroupId: 99, GroupMemberStatus: 1 }];
       }
       return [];

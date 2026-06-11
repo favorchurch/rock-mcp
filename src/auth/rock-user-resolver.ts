@@ -143,7 +143,10 @@ export class RockUserResolver {
 
       let isMember = false;
       try {
-        const members = await lookupClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 'Active'`);
+        // GroupMemberStatus is an integer enum (1 = Active), not a string —
+        // filtering with 'Active' silently returns nothing on this v1 OData
+        // instance, which would leave every admin stuck in readonly mode.
+        const members = await lookupClient.get<any[]>(ctx, `/api/GroupMembers?$filter=GroupId eq ${groupId} and PersonId eq ${personId} and GroupMemberStatus eq 1`);
         isMember = members && members.length > 0;
       } catch {
         // Ignore — denied lookups mean "not admin"

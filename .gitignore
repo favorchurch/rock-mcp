@@ -17,5 +17,5 @@ next-env.d.ts
 # graphify generated knowledge-graph output
 graphify-out
 
-# graphify generated knowledge-graph output
-graphify-out
+# superpowers scratch (plans/specs) — not part of the shipped repo
+docs/superpowers/

@@ -314,6 +314,38 @@ async function upsertMobilePhoneNumber(
 }
 
 /**
+ * Fetch Group records (Id, Name, GroupTypeId) by id via a single batched v1
+ * query. Avoids the `$expand=Group` navigation property, which this Rock
+ * instance's OData does not expose on GroupMember ("Could not find a property
+ * named 'Group' on type 'Rock.Model.GroupMember'").
+ */
+async function fetchGroupsByIds(
+  client: RockClient,
+  ctx: OAuthRockContext,
+  ids: number[]
+): Promise<Map<number, any>> {
+  const result = new Map<number, any>();
+  const unique = [...new Set(ids.filter((id) => typeof id === 'number' && !Number.isNaN(id)))];
+  if (unique.length === 0) return result;
+
+  // Chunk to keep the OData filter string a reasonable length.
+  const CHUNK = 50;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    const filter = chunk.map((id) => `Id eq ${id}`).join(' or ');
+    try {
+      const groups = await client.get<any[]>(ctx, `/api/Groups?$filter=${filter}&$top=${chunk.length}`);
+      for (const g of groups || []) {
+        if (g && typeof g.Id === 'number') result.set(g.Id, g);
+      }
+    } catch {
+      // Tolerate a failed chunk — callers degrade to ids without names.
+    }
+  }
+  return result;
+}
+
+/**
  * Classify groups by type using discovery map.
  */
 async function getPersonGroups(
@@ -324,18 +356,30 @@ async function getPersonGroups(
 ): Promise<{ connectGroups: any[]; ministryTeams: any[]; other: any[]; warning?: string }> {
   try {
     let members: any[] = [];
+    let expandedGroups = false; // v2 search embeds the Group object; v1 does not
     try {
       members = await client.post(ctx, '/api/v2/models/groupmembers/search', {
         Where: `PersonId == ${personId}`,
         Limit: 200,
       });
+      expandedGroups = true;
     } catch {
-      members = await client.get(ctx, `/api/GroupMembers?$filter=PersonId eq ${personId}&$top=200&$expand=Group,GroupRole`);
+      // v1 OData fallback. Do NOT $expand=Group — that navigation property is
+      // not exposed on GroupMember here. GroupRole expands fine; Group details
+      // are fetched separately by id below.
+      members = await client.get(ctx, `/api/GroupMembers?$filter=PersonId eq ${personId}&$top=200&$expand=GroupRole`);
     }
 
     const connectGroups: any[] = [];
     const ministryTeams: any[] = [];
     const other: any[] = [];
+
+    // For the v1 path, resolve Group Name + GroupTypeId via a batched lookup.
+    let groupsById = new Map<number, any>();
+    if (!expandedGroups) {
+      const ids = members.map((m: any) => m.GroupId).filter((id: any) => typeof id === 'number');
+      groupsById = await fetchGroupsByIds(client, ctx, ids);
+    }
 
     let map = null;
     try {
@@ -350,10 +394,10 @@ async function getPersonGroups(
     const ministryTeamTypeIds = map ? map.groupTypes.ministryTeams.map((m: any) => m.id) : [];
 
     for (const m of members) {
-      const group = m.Group || {};
+      const group = m.Group || groupsById.get(m.GroupId) || {};
       const groupTypeId = group.GroupTypeId;
       const item = {
-        groupId: group.Id,
+        groupId: group.Id ?? m.GroupId,
         name: group.Name,
         role: m.GroupRole ? m.GroupRole.Name : 'Member',
       };
@@ -434,25 +478,36 @@ async function getFamily(
         }
       }
     } catch {
-      // Try v1 fallback
+      // Try v1 fallback. Avoid $expand=Group and the Group/GroupTypeId
+      // navigation filter — neither is exposed on GroupMember here. Instead,
+      // list the person's memberships, resolve their groups by id, and pick the
+      // family group client-side.
       try {
-        const familyGroupMembers = await client.get<any[]>(
+        const personMemberships = await client.get<any[]>(
           ctx,
-          `/api/GroupMembers?$filter=PersonId eq ${personId} and Group/GroupTypeId eq ${familyGroupTypeId}&$expand=Group&$top=1`
+          `/api/GroupMembers?$filter=PersonId eq ${personId}&$top=200`
         );
-        if (familyGroupMembers && familyGroupMembers.length > 0) {
-          const familyGroupId = familyGroupMembers[0].Group?.Id;
-          if (familyGroupId) {
-            const allMembers = await client.get<any[]>(
-              ctx,
-              `/api/GroupMembers?$filter=GroupId eq ${familyGroupId}&$expand=Person,GroupRole`
-            );
-            familyMembers = allMembers.map((m: any) => ({
-              personId: m.Person?.Id,
-              name: m.Person ? `${m.Person.NickName || m.Person.FirstName} ${m.Person.LastName}` : 'Unknown',
-              role: m.GroupRole ? m.GroupRole.Name : 'Family Member',
-            }));
+        const membershipGroupIds = (personMemberships || [])
+          .map((m: any) => m.GroupId)
+          .filter((id: any) => typeof id === 'number');
+        const groupsById = await fetchGroupsByIds(client, ctx, membershipGroupIds);
+        let familyGroupId: number | undefined;
+        for (const [id, g] of groupsById) {
+          if (g?.GroupTypeId === familyGroupTypeId) {
+            familyGroupId = id;
+            break;
           }
+        }
+        if (familyGroupId) {
+          const allMembers = await client.get<any[]>(
+            ctx,
+            `/api/GroupMembers?$filter=GroupId eq ${familyGroupId}&$expand=Person,GroupRole`
+          );
+          familyMembers = allMembers.map((m: any) => ({
+            personId: m.Person?.Id,
+            name: m.Person ? `${m.Person.NickName || m.Person.FirstName} ${m.Person.LastName}` : 'Unknown',
+            role: m.GroupRole ? m.GroupRole.Name : 'Family Member',
+          }));
         }
       } catch {
         // Unable to resolve family
