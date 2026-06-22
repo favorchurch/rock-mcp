@@ -65,7 +65,7 @@ const rockEntitySchema = z.discriminatedUnion('action', [
     model: z.string().min(1).optional().describe(MODEL_DESCRIPTION),
     searchKey: z.string().min(1)
       .describe('Saved Entity Search key. Discover keys via rock_lookup.'),
-    refinements: z.record(z.unknown()).default({}),
+    refinements: z.record(z.string(), z.unknown()).default({}),
     offset: z.coerce.number().int().nonnegative().default(0),
     limit: z.coerce.number().int().positive().max(1000).default(100),
     shape: z.enum(['count', 'summary', 'table', 'full']).default('table')

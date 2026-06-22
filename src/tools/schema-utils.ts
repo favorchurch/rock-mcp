@@ -16,7 +16,7 @@ type UnionOptions = Array<z.ZodObject<z.ZodRawShape>>;
 
 function getUnionParts(schema: z.ZodTypeAny): { discriminator: string; options: UnionOptions } | null {
   const def = (schema as any)?._def;
-  if (!def || def.typeName !== z.ZodFirstPartyTypeKind.ZodDiscriminatedUnion) {
+  if (!def || def.typeName !== 'ZodDiscriminatedUnion') {
     return null;
   }
   return { discriminator: def.discriminator, options: def.options as UnionOptions };
@@ -24,7 +24,7 @@ function getUnionParts(schema: z.ZodTypeAny): { discriminator: string; options: 
 
 function literalValue(field: z.ZodTypeAny): string | null {
   const def = (field as any)?._def;
-  if (def?.typeName === z.ZodFirstPartyTypeKind.ZodLiteral && typeof def.value === 'string') {
+  if (def?.typeName === 'ZodLiteral' && typeof def.value === 'string') {
     return def.value;
   }
   return null;
@@ -43,7 +43,8 @@ export function extractActionNames(schema: z.ZodTypeAny): string[] {
   if (!parts) return [];
   const names: string[] = [];
   for (const option of parts.options) {
-    const value = literalValue(option.shape[parts.discriminator] as z.ZodTypeAny);
+    const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+    const value = literalValue(shape[parts.discriminator] as z.ZodTypeAny);
     if (value !== null) names.push(value);
   }
   return names;
@@ -65,8 +66,9 @@ export function flattenUnionForAdvertisement(schema: z.ZodTypeAny): z.ZodTypeAny
   const fieldActions = new Map<string, string[]>();
 
   for (const option of parts.options) {
-    const action = literalValue(option.shape[parts.discriminator] as z.ZodTypeAny) ?? '?';
-    for (const [key, field] of Object.entries(option.shape)) {
+    const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+    const action = literalValue(shape[parts.discriminator] as z.ZodTypeAny) ?? '?';
+    for (const [key, field] of Object.entries(shape)) {
       if (key === parts.discriminator) continue;
       if (!fieldSchemas.has(key)) fieldSchemas.set(key, field as z.ZodTypeAny);
       const used = fieldActions.get(key) ?? [];
@@ -75,7 +77,7 @@ export function flattenUnionForAdvertisement(schema: z.ZodTypeAny): z.ZodTypeAny
     }
   }
 
-  const shape: z.ZodRawShape = {
+  const shapeObj: Record<string, z.ZodTypeAny> = {
     [parts.discriminator]: z
       .enum(actionNames as [string, ...string[]])
       .describe(`The operation to perform. One of: ${actionNames.join(', ')}.`),
@@ -86,10 +88,10 @@ export function flattenUnionForAdvertisement(schema: z.ZodTypeAny): z.ZodTypeAny
     const scope = usedBy.length === actionNames.length ? 'all actions' : `actions: ${usedBy.join(', ')}`;
     const existing = baseDescription(field);
     const description = existing ? `${existing} (${scope})` : `Used by ${scope}.`;
-    shape[key] = field.optional().describe(description);
+    shapeObj[key] = field.optional().describe(description);
   }
 
-  return z.object(shape).passthrough();
+  return z.object(shapeObj as z.ZodRawShape).passthrough();
 }
 
 /**
@@ -117,7 +119,8 @@ export function describeToolValidationError(toolName: string, error: z.ZodError,
   const fieldHints = new Map<string, string>();
   if (parts) {
     for (const option of parts.options) {
-      for (const [key, field] of Object.entries(option.shape)) {
+      const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+      for (const [key, field] of Object.entries(shape)) {
         const desc = baseDescription(field as z.ZodTypeAny);
         if (desc && !fieldHints.has(key)) fieldHints.set(key, desc);
       }
@@ -125,7 +128,7 @@ export function describeToolValidationError(toolName: string, error: z.ZodError,
   }
 
   for (const issue of error.issues) {
-    if (issue.code === z.ZodIssueCode.invalid_union_discriminator) {
+    if (issue.code === 'invalid_union_discriminator') {
       const discriminator = parts?.discriminator ?? 'action';
       const receivedValue = args && typeof args === 'object'
         ? (args as Record<string, unknown>)[discriminator]
