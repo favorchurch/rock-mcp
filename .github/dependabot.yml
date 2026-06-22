@@ -11,6 +11,11 @@ updates:
           - "minor"
           - "patch"
     open-pull-requests-limit: 10
+    ignore:
+      # @types/node must track the Node runtime major (22), not the latest
+      # release — a major ahead of the runtime lets nonexistent APIs typecheck.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
