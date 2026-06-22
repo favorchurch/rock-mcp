@@ -44,7 +44,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Type check
-        run: npx tsc --noEmit -p tsconfig.json
+        # Run both tsconfigs (app + server). The server config (tsconfig.server.json)
+        # covers src/ — checking only tsconfig.json previously let server-only type
+        # breakage (e.g. from major dependency bumps) pass CI undetected.
+        run: pnpm typecheck
 
       - name: Run tests
         # Integration tests are guarded with it.runIf(hasEnv) and skip cleanly without Rock env vars.
