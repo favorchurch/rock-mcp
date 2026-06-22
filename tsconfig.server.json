@@ -3,6 +3,7 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "types": ["node"],
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM"],
     "outDir": "./dist",
