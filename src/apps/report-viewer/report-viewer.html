@@ -9,15 +9,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-primary: #0b0f19;
-      --bg-secondary: #161c2d;
-      --bg-tertiary: #1f2a40;
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
       --accent-color: #4f46e5;
       --accent-hover: #6366f1;
-      --text-primary: #f3f4f6;
-      --text-secondary: #9ca3af;
-      --border-color: #2d3748;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --border-color: #30363d;
       --success-color: #10b981;
+      --header-hover: #1c2128;
     }
 
     * {
@@ -194,6 +195,34 @@
       font-weight: 600;
       padding: 1rem 1.25rem;
       border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.15s;
+    }
+
+    th:hover {
+      background-color: #2d333b;
+    }
+
+    th.sortable::after {
+      content: '';
+      display: inline-block;
+      margin-left: 0.5rem;
+      font-size: 0.75rem;
+      opacity: 0.5;
+      transition: opacity 0.15s;
+    }
+
+    th.sortable.sort-asc::after {
+      content: '▲';
+      opacity: 1;
+      color: var(--accent-color);
+    }
+
+    th.sortable.sort-desc::after {
+      content: '▼';
+      opacity: 1;
+      color: var(--accent-color);
     }
 
     td {
@@ -243,7 +272,8 @@
     </div>
     <div class="actions">
       <button id="btn-refresh" class="secondary">Refresh</button>
-      <button id="btn-export">Export CSV</button>
+      <button id="btn-export-csv">Export CSV</button>
+      <button id="btn-export-json">Export JSON</button>
     </div>
   </header>
 
