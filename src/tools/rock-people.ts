@@ -114,7 +114,7 @@ const writeActions = [
     action: z.literal('patchAttributes'),
     personId: z.coerce.number().optional(),
     personGuid: z.string().optional(),
-    attributes: z.record(z.unknown()),
+    attributes: z.record(z.string(), z.unknown()),
     dryRun: z.boolean().default(true).describe('Preview-only by default. Set dryRun:false AND commit:true to apply.'),
     commit: z.boolean().default(false).describe('Must be true (with dryRun:false) to actually write.'),
     reason: z.string().min(1).describe('Required justification for the change; recorded in the audit log.'),
