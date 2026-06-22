@@ -16,7 +16,10 @@ type UnionOptions = Array<z.ZodObject<z.ZodRawShape>>;
 
 function getUnionParts(schema: z.ZodTypeAny): { discriminator: string; options: UnionOptions } | null {
   const def = (schema as any)?._def;
-  if (!def || def.typeName !== 'ZodDiscriminatedUnion') {
+  // In zod 4, discriminated unions have type: 'union' with a discriminator field
+  // In zod 3, they had typeName: 'ZodDiscriminatedUnion'
+  const isDiscriminatedUnion = (def?.type === 'union' && def?.discriminator) || def?.typeName === 'ZodDiscriminatedUnion';
+  if (!def || !isDiscriminatedUnion) {
     return null;
   }
   return { discriminator: def.discriminator, options: def.options as UnionOptions };
@@ -24,6 +27,11 @@ function getUnionParts(schema: z.ZodTypeAny): { discriminator: string; options: 
 
 function literalValue(field: z.ZodTypeAny): string | null {
   const def = (field as any)?._def;
+  // In zod 4, literals have type: 'literal' and values array
+  // In zod 3, they had typeName: 'ZodLiteral' and a value field
+  if (def?.type === 'literal' && Array.isArray(def.values) && typeof def.values[0] === 'string') {
+    return def.values[0];
+  }
   if (def?.typeName === 'ZodLiteral' && typeof def.value === 'string') {
     return def.value;
   }
@@ -43,7 +51,8 @@ export function extractActionNames(schema: z.ZodTypeAny): string[] {
   if (!parts) return [];
   const names: string[] = [];
   for (const option of parts.options) {
-    const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+    const optionDef = (option as any)._def;
+    const shape = typeof optionDef.shape === 'function' ? optionDef.shape() : optionDef.shape;
     const value = literalValue(shape[parts.discriminator] as z.ZodTypeAny);
     if (value !== null) names.push(value);
   }
@@ -66,7 +75,8 @@ export function flattenUnionForAdvertisement(schema: z.ZodTypeAny): z.ZodTypeAny
   const fieldActions = new Map<string, string[]>();
 
   for (const option of parts.options) {
-    const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+    const optionDef = (option as any)._def;
+    const shape = typeof optionDef.shape === 'function' ? optionDef.shape() : optionDef.shape;
     const action = literalValue(shape[parts.discriminator] as z.ZodTypeAny) ?? '?';
     for (const [key, field] of Object.entries(shape)) {
       if (key === parts.discriminator) continue;
@@ -119,7 +129,8 @@ export function describeToolValidationError(toolName: string, error: z.ZodError,
   const fieldHints = new Map<string, string>();
   if (parts) {
     for (const option of parts.options) {
-      const shape = typeof option._def.shape === 'function' ? option._def.shape() : option._def.shape;
+      const optionDef = (option as any)._def;
+      const shape = typeof optionDef.shape === 'function' ? optionDef.shape() : optionDef.shape;
       for (const [key, field] of Object.entries(shape)) {
         const desc = baseDescription(field as z.ZodTypeAny);
         if (desc && !fieldHints.has(key)) fieldHints.set(key, desc);
@@ -128,7 +139,11 @@ export function describeToolValidationError(toolName: string, error: z.ZodError,
   }
 
   for (const issue of error.issues) {
-    if (issue.code === 'invalid_union_discriminator') {
+    // Detect discriminated union errors: check for 'invalid_union' code with a discriminator field
+    const isDiscriminatorError = (issue.code === 'invalid_union' || (issue.code as string) === 'invalid_union_discriminator')
+      && (issue as any).discriminator;
+
+    if (isDiscriminatorError) {
       const discriminator = parts?.discriminator ?? 'action';
       const receivedValue = args && typeof args === 'object'
         ? (args as Record<string, unknown>)[discriminator]

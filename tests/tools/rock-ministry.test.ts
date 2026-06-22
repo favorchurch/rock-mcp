@@ -296,8 +296,8 @@ describe('rock_ministry tool', () => {
       const result = (schema as z.ZodTypeAny).safeParse({ action: 'groupMembers', groupId: '86' });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.groupId).toBe(86);
-        expect(typeof result.data.groupId).toBe('number');
+        expect((result.data as any).groupId).toBe(86);
+        expect(typeof (result.data as any).groupId).toBe('number');
       }
     });
 
@@ -307,7 +307,7 @@ describe('rock_ministry tool', () => {
       const result = (schema as z.ZodTypeAny).safeParse({ action: 'groups', kind: 'connectGroup', limit: '25' });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.limit).toBe(25);
+        expect((result.data as any).limit).toBe(25);
       }
     });
 
