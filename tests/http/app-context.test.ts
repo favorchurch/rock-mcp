@@ -33,11 +33,11 @@ const verifier: OAuthTokenVerifier = {
 };
 
 class FakeRockClient implements RockClient {
-  async get<T>(): Promise<T> { return [] as T; }
-  async post<T>(): Promise<T> { return [] as T; }
-  async put<T>(): Promise<T> { return {} as T; }
-  async patch<T>(): Promise<T> { return {} as T; }
-  async delete<T>(): Promise<T> { return {} as T; }
+  async get<T>(_ctx: any, _path: string): Promise<T> { return [] as T; }
+  async post<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return [] as T; }
+  async put<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return {} as T; }
+  async patch<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return {} as T; }
+  async delete<T>(_ctx: any, _path: string): Promise<T> { return {} as T; }
 }
 
 function makeClientFactory() {

@@ -55,10 +55,20 @@ export interface AppContext {
   rockBaseUrl: string;
   /**
    * Returns a RockClient bound to an alternate Rock base URL (per-request
-   * `?server=` override). Clients are cached per base URL. Callers must
+   * `?server=` or `?url=` override). Clients are cached per base URL. Callers must
    * validate the URL via resolveServerOverride first.
    */
   rockClientForBase(baseUrl: string): RockClient;
+  /**
+   * Returns a RockUserResolver bound to an alternate Rock base URL (per-request
+   * override). Resolvers are cached per base URL.
+   */
+  rockUserResolverForBase(baseUrl: string): RockUserResolver;
+  /**
+   * Returns a DiscoveryService bound to an alternate Rock base URL (per-request
+   * override). Services are cached per base URL.
+   */
+  discoveryServiceForBase(baseUrl: string): DiscoveryService;
 }
 
 export async function buildAppContext(options: CreateAppContextOptions = {}): Promise<AppContext> {
@@ -110,6 +120,31 @@ export async function buildAppContext(options: CreateAppContextOptions = {}): Pr
     return client;
   };
 
+  const scopedUserResolvers = new Map<string, RockUserResolver>([[rockBaseUrl, rockUserResolver]]);
+  const rockUserResolverForBase = (baseUrl: string): RockUserResolver => {
+    if (options.rockUserResolver && baseUrl === rockBaseUrl) {
+      return options.rockUserResolver;
+    }
+    let resolver = scopedUserResolvers.get(baseUrl);
+    if (!resolver) {
+      const client = rockClientForBase(baseUrl);
+      resolver = new RockUserResolver(client);
+      scopedUserResolvers.set(baseUrl, resolver);
+    }
+    return resolver;
+  };
+
+  const scopedDiscoveryServices = new Map<string, DiscoveryService>([[rockBaseUrl, discoveryService]]);
+  const discoveryServiceForBase = (baseUrl: string): DiscoveryService => {
+    let service = scopedDiscoveryServices.get(baseUrl);
+    if (!service) {
+      const client = rockClientForBase(baseUrl);
+      service = new DiscoveryService(client, redis);
+      scopedDiscoveryServices.set(baseUrl, service);
+    }
+    return service;
+  };
+
   return {
     oauthConfig,
     oauthMetadata,
@@ -124,6 +159,8 @@ export async function buildAppContext(options: CreateAppContextOptions = {}): Pr
     redisConfigured: !!redis,
     rockBaseUrl,
     rockClientForBase,
+    rockUserResolverForBase,
+    discoveryServiceForBase,
   };
 }
 
