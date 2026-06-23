@@ -41,11 +41,11 @@ function verifierWithScopes(scopes: string[]): OAuthTokenVerifier {
 }
 
 class FakeRockClient implements RockClient {
-  async get<T>(): Promise<T> { return [] as T; }
-  async post<T>(): Promise<T> { return [] as T; }
-  async put<T>(): Promise<T> { return {} as T; }
-  async patch<T>(): Promise<T> { return {} as T; }
-  async delete<T>(): Promise<T> { return {} as T; }
+  async get<T>(_ctx: any, _path: string): Promise<T> { return [] as T; }
+  async post<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return [] as T; }
+  async put<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return {} as T; }
+  async patch<T>(_ctx: any, _path: string, _body?: unknown): Promise<T> { return {} as T; }
+  async delete<T>(_ctx: any, _path: string): Promise<T> { return {} as T; }
 }
 
 const stubResolver = {
@@ -183,8 +183,8 @@ describe('handleMcpPost', () => {
     expect(json.error).toMatch(/write/i);
   });
 
-  it('rejects a ?server= override outside the allowed domain with 400', async () => {
-    const request = new Request('https://mcp.example.com/mcp?server=evil.com', {
+  it('rejects a ?url= override outside the allowed domain with 400', async () => {
+    const request = new Request('https://mcp.example.com/mcp?url=evil.com', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -200,27 +200,49 @@ describe('handleMcpPost', () => {
     expect(json.error).toMatch(/not an allowed Rock host/);
   });
 
-  it('routes tool clients to an allowed ?server= override host', async () => {
+  it('routes to an allowed ?url= override host and prioritizes it over ?server=', async () => {
     const factoryCalls: string[] = [];
     const options = appOptions(verifierWithScopes(['read']));
     options.rockClientFactory = (config) => {
       factoryCalls.push(config.baseUrl);
-      return new FakeRockClient();
+      const client = new FakeRockClient();
+      (client as any).baseUrl = config.baseUrl;
+      return client;
+    };
+    // Exclude mock user resolver so it falls back to dynamic resolver using our factory client
+    options.rockUserResolver = undefined;
+
+    // Mock the GetCurrentPerson call so user resolution passes and track calls
+    const gotCalls: string[] = [];
+    const originalGet = FakeRockClient.prototype.get;
+    FakeRockClient.prototype.get = async function<T>(this: FakeRockClient, _ctx: unknown, path: string): Promise<T> {
+      gotCalls.push((this as any).baseUrl);
+      if (path.includes('GetCurrentPerson')) {
+        return { Id: 100, Guid: 'a0000000-0000-0000-0000-000000000100', PrimaryAliasId: 100 } as unknown as T;
+      }
+      return [] as unknown as T;
     };
 
-    const request = new Request('https://mcp.example.com/mcp?server=rock-preview.example.com', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        Authorization: 'Bearer valid-token',
-      },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
-    });
-    const response = await handleMcpPost(request, 'readonly', options);
+    try {
+      const request = new Request('https://mcp.example.com/mcp?url=rock-preview.example.com&server=rock.example.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          Authorization: 'Bearer valid-token',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      const response = await handleMcpPost(request, 'readonly', options);
 
-    expect(response.status).toBe(200);
-    expect(factoryCalls).toContain('https://rock-preview.example.com');
+      expect(response.status).toBe(200);
+      expect(factoryCalls).toContain('https://rock-preview.example.com');
+      // Assert that actual client operations ran against the overridden URL
+      expect(gotCalls).toContain('https://rock-preview.example.com');
+      expect(gotCalls).not.toContain('https://rock.example.com');
+    } finally {
+      FakeRockClient.prototype.get = originalGet;
+    }
   });
 
   it('sets permissive CORS headers on responses', async () => {

@@ -38,26 +38,32 @@ export async function handleMcpPost(
   const ctx: OAuthRockContext = validation.ctx;
 
   ctx.endpoint = endpointKind;
-  (ctx as { rockClient?: unknown }).rockClient = app.rockClient;
-  (ctx as { discoveryService?: unknown }).discoveryService = app.discoveryService;
-  (ctx as { datasetStore?: unknown }).datasetStore = app.datasetStore;
 
-  // Optional per-request Rock server override: /mcp?server=<host>.
-  // Allowlisted hosts only (see server-override.ts). Note: discovery and
-  // user resolution still run against the default server; only tool calls
-  // use the override client.
-  const serverParam = new URL(request.url).searchParams.get('server');
+  let activeRockClient = app.rockClient;
+  let activeUserResolver = app.rockUserResolver;
+  let activeDiscoveryService = app.discoveryService;
+
+  // Optional per-request Rock server override: /mcp?url=<host> or /mcp?server=<host>.
+  // Allowlisted hosts only (see server-override.ts).
+  const { searchParams } = new URL(request.url);
+  const serverParam = searchParams.get('url') || searchParams.get('server');
   if (serverParam) {
     const override = resolveServerOverride(serverParam, app.rockBaseUrl, process.env.ROCK_ALLOWED_SERVERS);
     if (!override.ok) {
       return jsonCors({ error: override.error }, { status: 400 });
     }
-    (ctx as { rockClient?: unknown }).rockClient = app.rockClientForBase(override.baseUrl);
+    activeRockClient = app.rockClientForBase(override.baseUrl);
+    activeUserResolver = app.rockUserResolverForBase(override.baseUrl);
+    activeDiscoveryService = app.discoveryServiceForBase(override.baseUrl);
   }
+
+  (ctx as { rockClient?: unknown }).rockClient = activeRockClient;
+  (ctx as { discoveryService?: unknown }).discoveryService = activeDiscoveryService;
+  (ctx as { datasetStore?: unknown }).datasetStore = app.datasetStore;
 
   try {
     // Resolve Rock person for this OAuth subject
-    const resolvedUser = await app.rockUserResolver.resolve(ctx, {
+    const resolvedUser = await activeUserResolver.resolve(ctx, {
       subject: ctx.oauth.subject,
       email: ctx.oauth.email,
     });

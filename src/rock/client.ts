@@ -7,6 +7,7 @@ export interface RockRequestOptions {
 }
 
 export interface RockClient {
+  readonly baseUrl?: string;
   get<T>(ctx: OAuthRockContext, path: string, options?: RockRequestOptions): Promise<T>;
   post<T>(ctx: OAuthRockContext, path: string, body?: unknown, options?: RockRequestOptions): Promise<T>;
   put<T>(ctx: OAuthRockContext, path: string, body?: unknown, options?: RockRequestOptions): Promise<T>;
@@ -27,7 +28,7 @@ export interface RockClientConfig {
  * mode can use a developer API key.
  */
 export class RockClientImpl implements RockClient {
-  private baseUrl: string;
+  public readonly baseUrl: string;
   private credentialStrategy: RockCredentialStrategy;
   private defaultTimeoutMs: number;
 
