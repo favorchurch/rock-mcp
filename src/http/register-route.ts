@@ -1,7 +1,8 @@
 import { getAppContext, CreateAppContextOptions } from './app-context.js';
 import { jsonCors } from './oauth-validate.js';
 import type { Auth0OAuthMetadata } from './oauth.js';
-import { DcrRateLimiter, extractClientIp } from './dcr-rate-limiter.js';
+import { DCR_RATE_LIMIT_SEGMENT } from './dcr-rate-limiter.js';
+import { RateLimiter, extractClientIp } from './rate-limiter.js';
 import { DCR_RATE_LIMIT_REQUESTS, DCR_RATE_LIMIT_WINDOW_SECONDS } from './oauth-transactions.js';
 import { createRedisClient, getRedisPrefix } from '../rock/redis.js';
 
@@ -109,6 +110,10 @@ export function localizeOAuthMetadata(
     authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
     registration_endpoint: `${base}/oauth/register`,
+    // Token revocation (RFC 7009) is proxied through this server to Auth0; see
+    // handleRevokePost in oauth-proxy.ts. Auth0 remains authoritative for the
+    // actual revocation.
+    revocation_endpoint: `${base}/oauth/revoke`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
@@ -139,9 +144,10 @@ export async function handleRegisterPost(
     // limiting; keep failing open in dev/test where Redis is often absent.
     const failClosed =
       process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
-    const limiter = new DcrRateLimiter(
+    const limiter = new RateLimiter(
       redis,
       getRedisPrefix(),
+      DCR_RATE_LIMIT_SEGMENT,
       DCR_RATE_LIMIT_REQUESTS,
       DCR_RATE_LIMIT_WINDOW_SECONDS,
       failClosed
