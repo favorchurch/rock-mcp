@@ -703,6 +703,48 @@ async function resolveDefinedValueId(
   return resolveDefinedValueIdByName(client, ctx, definedTypeName, valueName);
 }
 
+/**
+ * Count active Rock people in a given Connection Status (e.g. 'New', 'Crowd',
+ * 'Core', 'Leader'). Read-only and failure-safe: returns the true total, or
+ * `null` if the status can't be resolved or the count can't be fetched. Used by
+ * the rock_usage wiki live overlay; mirrors the count path in the `filter` action.
+ */
+export async function countByConnectionStatus(
+  ctx: OAuthRockContext,
+  statusName: string
+): Promise<number | null> {
+  const client = (ctx as any).rockClient as RockClient | undefined;
+  if (!client) return null;
+  try {
+    const statusMap = await getDefinedValueMap(client, ctx, 'Connection Status');
+    const needle = statusName.toLowerCase();
+    let valueId: number | null = null;
+    for (const [id, value] of statusMap.entries()) {
+      if (value.toLowerCase() === needle) {
+        valueId = id;
+        break;
+      }
+    }
+    if (valueId == null) return null;
+
+    try {
+      const countResult = await client.post(ctx, '/api/v2/models/people/search', {
+        Where: `ConnectionStatusValueId == ${valueId}`,
+        IsCountOnly: true,
+      });
+      return Number(countResult);
+    } catch {
+      const all = await client.get<any[]>(
+        ctx,
+        `/api/People?$filter=ConnectionStatusValueId eq ${valueId}&$select=Id`
+      );
+      return (all || []).length;
+    }
+  } catch {
+    return null;
+  }
+}
+
 export const rockPeopleTool: GatewayTool = {
   name: 'rock_people',
   title: 'Rock People Directory',

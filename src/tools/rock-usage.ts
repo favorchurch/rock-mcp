@@ -4,18 +4,76 @@ import { McpMode, McpScope } from '../mcp/modes.js';
 import { OAuthRockContext } from '../http/oauth.js';
 import { getRockGuideText } from '../mcp/guide-text.js';
 import { USAGE_NUDGE } from './usage-nudge.js';
+import { formatResponse } from './formatter.js';
+import { getTopic, listTopics, searchTopics } from '../mcp/wiki/wiki-store.js';
+import { renderLiveOverlay } from '../mcp/wiki/live-overlay.js';
+
+const WIKI_HINT =
+  'This tool also doubles as a searchable Favor Rock wiki: call with `{list:true}` to see best-practice topics, `{query:"..."}` to search them, or `{topic:"connection-status"}` to read one (with current live values).';
 
 export const rockUsageTool: GatewayTool = {
   name: 'rock_usage',
   title: 'Rock Usage Guide',
   schemaForMode(_mode: McpMode, _scopes: Set<McpScope>): z.ZodTypeAny | null {
-    return z.object({});
+    // Plain optional-fields object: an empty object ({}) stays valid so the
+    // default "no args → full guide" contract holds. Optional params turn the
+    // tool into a searchable best-practices wiki.
+    return z.object({
+      topic: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Fetch one wiki article by id or alias, e.g. 'connection-status'. Returns curated guidance plus current live values when available."
+        ),
+      query: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Search the Rock best-practices wiki across titles, aliases, tags, and body. Returns ranked matches.'),
+      list: z
+        .boolean()
+        .optional()
+        .describe('List all available wiki topics (id, title, tags) to discover what guidance exists.'),
+    });
   },
   descriptionForMode(mode: McpMode): string {
-    return `${getRockGuideText(mode)}\n\n${USAGE_NUDGE}`;
+    return `${getRockGuideText(mode)}\n\n${USAGE_NUDGE}\n\n${WIKI_HINT}`;
   },
-  async handle(_args: any, _extra: any, ctx: OAuthRockContext): Promise<McpToolResult> {
+  async handle(args: any, _extra: any, ctx: OAuthRockContext): Promise<McpToolResult> {
     const mode = ctx.mode ?? 'readonly';
+    const topic = typeof args?.topic === 'string' ? args.topic : undefined;
+    const query = typeof args?.query === 'string' ? args.query : undefined;
+    const list = args?.list === true;
+
+    // Precedence: topic → query → list → default full guide.
+    if (topic) {
+      const article = getTopic(topic);
+      if (!article) {
+        const available = listTopics().map((t) => t.id);
+        return formatResponse('topic', ctx, null, {
+          code: 'TOPIC_NOT_FOUND',
+          message: `No wiki topic '${topic}'. Use {list:true} to see topics.`,
+          details: { available },
+        });
+      }
+      let text = `# ${article.frontMatter.title}\n\n${article.body}`;
+      if (article.frontMatter.liveBinding) {
+        const overlay = await renderLiveOverlay(article.frontMatter.liveBinding, ctx);
+        if (overlay) text += overlay;
+      }
+      return { content: [{ type: 'text', text }] };
+    }
+
+    if (query) {
+      return formatResponse('query', ctx, searchTopics(query));
+    }
+
+    if (list) {
+      return formatResponse('list', ctx, listTopics());
+    }
+
+    // Default: full usage guide (unchanged).
     return {
       content: [
         {

@@ -4,8 +4,10 @@ const reportViewerIncludes = ['./static/**/*', './dist/apps/**/*'];
 
 const nextConfig: NextConfig = {
   // The MCP route handlers read the report-viewer HTML and the markdown
-  // guide files from disk at runtime. Trace those assets into the serverless
-  // function bundles so they survive Vercel's file-tracing step.
+  // guide files from disk at runtime — including the searchable wiki under
+  // `static/mcp-guides/wiki/` (loaded by src/mcp/wiki/wiki-store.ts). The
+  // `./static/**/*` glob below recursively covers that directory; keep it that
+  // way so wiki topics survive Vercel's file-tracing step.
   outputFileTracingIncludes: {
     '/mcp': reportViewerIncludes,
     '/mcp/readonly': reportViewerIncludes,
