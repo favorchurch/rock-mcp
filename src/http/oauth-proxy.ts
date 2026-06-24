@@ -328,16 +328,32 @@ export async function handleRevokePost(request: Request, deps: OAuthProxyDeps): 
 
 /**
  * Resolves Auth0's RFC 7009 revocation endpoint. Prefer the discovery
- * metadata's `revocation_endpoint`; fall back to Auth0's standard
- * `{issuer}/oauth/revoke` when the metadata omits it.
+ * metadata's `revocation_endpoint`, but ONLY when it lives on the same origin
+ * as the configured (trusted) issuer; otherwise fall back to Auth0's standard
+ * `{issuer}/oauth/revoke`.
+ *
+ * The same-origin guard is a real safeguard, not just taint-laundering: the
+ * revocation request carries this proxy's confidential `client_secret`, so a
+ * tampered or unexpected discovery document must never be able to redirect that
+ * request to an arbitrary host (server-side request forgery / secret exfil —
+ * js/request-forgery). Constraining the host to the issuer's origin closes that.
  */
 function auth0RevocationEndpoint(deps: OAuthProxyDeps): string {
+  const issuer = deps.oauthConfig.issuer.replace(/\/$/, '');
+  const fallback = `${issuer}/oauth/revoke`;
   const fromMetadata = deps.oauthMetadata.revocation_endpoint;
   if (typeof fromMetadata === 'string' && fromMetadata.length > 0) {
-    return fromMetadata;
+    try {
+      const candidate = new URL(fromMetadata);
+      const issuerOrigin = new URL(issuer).origin;
+      if (candidate.origin === issuerOrigin) {
+        return `${issuerOrigin}${candidate.pathname}${candidate.search}`;
+      }
+    } catch {
+      // Malformed metadata URL — fall through to the issuer-derived endpoint.
+    }
   }
-  const issuer = deps.oauthConfig.issuer.replace(/\/$/, '');
-  return `${issuer}/oauth/revoke`;
+  return fallback;
 }
 
 async function revokeWithAuth0(deps: OAuthProxyDeps, token: string, tokenTypeHint?: string): Promise<void> {
