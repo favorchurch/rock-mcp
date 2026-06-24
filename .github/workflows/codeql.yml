@@ -30,6 +30,16 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
+          # The OAuth/MCP/DCR route handlers are rate-limited via a custom
+          # Redis-backed limiter (RateLimiter / DcrRateLimiter) plus Vercel edge
+          # controls. CodeQL's js/missing-rate-limiting query only recognizes a
+          # few specific middleware libraries, so it false-positives on every PR
+          # that touches a route handler. Exclude it; genuine rate-limiting
+          # coverage is enforced and reviewed in code.
+          config: |
+            query-filters:
+              - exclude:
+                  id: js/missing-rate-limiting
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4
