@@ -128,28 +128,35 @@ export async function handleRegisterPost(
   request: Request,
   options?: CreateAppContextOptions
 ): Promise<Response> {
+  const requestOrigin = request.headers.get('origin') ?? undefined;
   try {
     const app = await getAppContext(options);
 
     // Rate limiting: check client IP against per-IP registration limit
     const clientIp = extractClientIp(request);
     const redis = createRedisClient();
+    // Fail closed in production so a Redis outage cannot disable DCR rate
+    // limiting; keep failing open in dev/test where Redis is often absent.
+    const failClosed =
+      process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
     const limiter = new DcrRateLimiter(
       redis,
       getRedisPrefix(),
       DCR_RATE_LIMIT_REQUESTS,
-      DCR_RATE_LIMIT_WINDOW_SECONDS
+      DCR_RATE_LIMIT_WINDOW_SECONDS,
+      failClosed
     );
 
     const isAllowed = await limiter.checkLimit(clientIp);
     if (!isAllowed) {
-      console.warn('[register POST] Rate limit exceeded:', { clientIp });
+      console.warn('[register POST] Rate limit exceeded or limiter unavailable:', { clientIp });
       return jsonCors(
         {
           error: 'rate_limited',
           error_description: `Rate limit exceeded: maximum ${DCR_RATE_LIMIT_REQUESTS} registrations per ${DCR_RATE_LIMIT_WINDOW_SECONDS / 60} minutes per IP`,
         },
-        { status: 429 }
+        { status: 429 },
+        requestOrigin
       );
     }
 
@@ -163,7 +170,8 @@ export async function handleRegisterPost(
           error: 'invalid_redirect_uri',
           error_description: 'Request body must be valid JSON',
         },
-        { status: 400 }
+        { status: 400 },
+        requestOrigin
       );
     }
 
@@ -177,7 +185,8 @@ export async function handleRegisterPost(
           error: 'invalid_redirect_uri',
           error_description: 'redirect_uris must be a non-empty array',
         },
-        { status: 400 }
+        { status: 400 },
+        requestOrigin
       );
     }
 
@@ -188,7 +197,8 @@ export async function handleRegisterPost(
           error: 'invalid_redirect_uri',
           error_description: 'All redirect_uris must be strings',
         },
-        { status: 400 }
+        { status: 400 },
+        requestOrigin
       );
     }
 
@@ -198,7 +208,8 @@ export async function handleRegisterPost(
           error: 'invalid_redirect_uri',
           error_description: `A client may register at most ${MAX_REDIRECT_URIS} redirect_uris`,
         },
-        { status: 400 }
+        { status: 400 },
+        requestOrigin
       );
     }
 
@@ -211,7 +222,8 @@ export async function handleRegisterPost(
             error: 'invalid_redirect_uri',
             error_description: 'One or more redirect_uris are invalid or disallowed (must be HTTPS, or HTTP only for loopback, no fragments or credentials)',
           },
-          { status: 400 }
+          { status: 400 },
+          requestOrigin
         );
       }
     }
@@ -235,7 +247,8 @@ export async function handleRegisterPost(
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
       },
-      { status: 201 }
+      { status: 201 },
+      requestOrigin
     );
   } catch (err) {
     console.error('[register POST] Registration failed:', {
@@ -245,7 +258,8 @@ export async function handleRegisterPost(
       {
         error: 'server_error',
       },
-      { status: 500 }
+      { status: 500 },
+      requestOrigin
     );
   }
 }

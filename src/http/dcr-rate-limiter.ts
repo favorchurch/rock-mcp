@@ -4,24 +4,33 @@ import type { Redis } from '@upstash/redis';
  * Redis-backed fixed-window rate limiter for Dynamic Client Registration (DCR).
  * Uses Redis INCR + EXPIRE for per-IP rate limiting.
  *
- * If Redis is not configured (null), rate limiting is skipped (fail-open for local dev).
+ * If Redis is not configured (null) or errors, behavior depends on `failClosed`:
+ * - `failClosed === false` (default): rate limiting is skipped/allowed
+ *   (fail-open) — appropriate for local dev where Redis is often absent.
+ * - `failClosed === true`: requests are denied (fail-closed) — used in
+ *   production so a Redis outage cannot silently disable rate limiting.
  */
 export class DcrRateLimiter {
   constructor(
     private redis: Redis | null,
     private prefix: string,
     private maxRequests: number,
-    private windowSeconds: number
+    private windowSeconds: number,
+    private failClosed: boolean = false
   ) {}
 
   /**
    * Check if the given IP is within the rate limit.
    * Returns true if allowed, false if rate limited.
-   * On Redis errors, returns true (fail-open).
+   * When Redis is unavailable or errors, returns `!failClosed`.
    */
   public async checkLimit(clientIp: string): Promise<boolean> {
     if (!this.redis) {
-      // No Redis configured; skip rate limiting (fail-open for local dev)
+      // No Redis configured. Fail open in dev, fail closed (deny) in prod.
+      if (this.failClosed) {
+        console.warn('[DcrRateLimiter] Redis unavailable; failing closed (denying request)');
+        return false;
+      }
       return true;
     }
 
@@ -36,8 +45,14 @@ export class DcrRateLimiter {
       }
 
       return current <= this.maxRequests;
-    } catch {
-      // On any Redis error, fail open (allow the request)
+    } catch (err) {
+      // On any Redis error, fail open in dev or fail closed (deny) in prod.
+      if (this.failClosed) {
+        console.error('[DcrRateLimiter] Redis error; failing closed (denying request):', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return false;
+      }
       return true;
     }
   }
