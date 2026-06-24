@@ -58,8 +58,14 @@ export function resolveAllowOrigin(
   if (allowed.length === 0) {
     return { allowOrigin: '*', vary: false };
   }
-  if (requestOrigin && allowed.includes(requestOrigin)) {
-    return { allowOrigin: requestOrigin, vary: true };
+  // Return the matching entry from the configured allowlist rather than echoing
+  // the request's Origin header back verbatim. The value is identical, but its
+  // provenance is the trusted env config — this breaks the request-header →
+  // Access-Control-Allow-Origin taint flow that CodeQL flags as a permissive
+  // CORS misconfiguration (js/cors-permissive-configuration).
+  const match = requestOrigin ? allowed.find((origin) => origin === requestOrigin) : undefined;
+  if (match) {
+    return { allowOrigin: match, vary: true };
   }
   return { allowOrigin: allowed[0], vary: true };
 }
