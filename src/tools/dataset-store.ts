@@ -147,7 +147,13 @@ export class RedisDatasetStore implements DatasetStore {
     return dataset;
   }
 
-  public async delete(datasetId: string, _ctx: OAuthRockContext): Promise<void> {
+  public async delete(datasetId: string, ctx: OAuthRockContext): Promise<void> {
+    // Load first so ownership is enforced before we delete. get() returns null
+    // for a missing/expired dataset (then we no-op, matching InMemoryDatasetStore)
+    // and throws on an ownership mismatch (which we let propagate).
+    const dataset = await this.get(datasetId, ctx);
+    if (!dataset) return;
+
     const key = `${this.prefix}dataset:${datasetId}`;
     await this.redis.del(key);
   }

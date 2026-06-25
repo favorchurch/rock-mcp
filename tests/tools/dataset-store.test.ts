@@ -303,6 +303,29 @@ describe('RedisDatasetStore', () => {
     expect(retrieved).toBeNull();
   });
 
+  it('should reject delete from a different user (ownership enforcement)', async () => {
+    await store.put(testDataset, 600);
+
+    const otherCtx = {
+      ...mockCtx,
+      oauth: {
+        ...mockCtx.oauth,
+        subject: 'other-user-789',
+      },
+    } as OAuthRockContext;
+
+    const delSpy = vi.spyOn(mockRedis, 'del');
+
+    await expect(store.delete('redis-dataset-456', otherCtx)).rejects.toThrow(
+      'Access denied: dataset ownership mismatch'
+    );
+
+    // The key must NOT have been deleted, and the owner can still read it.
+    expect(delSpy).not.toHaveBeenCalled();
+    const retrieved = await store.get('redis-dataset-456', mockCtx);
+    expect(retrieved).not.toBeNull();
+  });
+
   it('should reject access to dataset with mismatched owner', async () => {
     await store.put(testDataset, 600);
 
