@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^0.3.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/sdk": "^1.0.1",
     "@upstash/redis": "^1.31.0",
     "jose": "^6.2.3",
